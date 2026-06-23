@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Zoomix
+Comment=Screen zoom, annotation, and image snip utility for Linux Mint X11
+Exec=zoomix
+Icon=io.github.zoomix
+Terminal=false
+Categories=Utility;
+StartupNotify=false

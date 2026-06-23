@@ -1,0 +1,33 @@
+[package]
+name = "zoomix"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A Linux Mint X11 screen zoom, annotation, and image snip utility inspired by Sysinternals ZoomIt."
+repository = "https://github.com/john/zoomix"
+
+[dependencies]
+anyhow = "1.0"
+arboard = "3.4"
+cairo-rs = { version = "0.18", features = ["png"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+dirs = "5.0"
+gdk = "0.18"
+gdk-pixbuf = "0.18"
+gio = "0.18"
+glib = "0.18"
+gtk = { version = "0.18", features = ["v3_24"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+pango = "0.18"
+pangocairo = "0.18"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+x11 = { version = "2.21", features = ["xlib"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

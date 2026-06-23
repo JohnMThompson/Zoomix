@@ -1,0 +1,16 @@
+start_hidden = true
+
+[hotkeys]
+zoom = "Ctrl+1"
+live_zoom = "Ctrl+4"
+draw = "Ctrl+2"
+snip = "Ctrl+3"
+
+[drawing]
+stroke_width = 4.0
+font = "Sans"
+font_size = 24.0
+
+[screenshots]
+directory = "~/Pictures/Zoomix"
+copy_to_clipboard = true

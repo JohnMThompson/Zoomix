@@ -1,0 +1,15 @@
+Source: zoomix
+Section: utils
+Priority: optional
+Maintainer: Zoomix Maintainers <maintainers@example.com>
+Build-Depends: debhelper-compat (= 13), cargo, rustc, pkg-config, libgtk-3-dev, libx11-dev, libcairo2-dev, libpango1.0-dev, libgdk-pixbuf-2.0-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/john/zoomix
+Rules-Requires-Root: no
+
+Package: zoomix
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, libgtk-3-0, libx11-6, libcairo2, libpango-1.0-0, libgdk-pixbuf-2.0-0
+Description: ZoomIt-style screen zoom and annotation utility for Linux Mint
+ Zoomix provides screen zoom, live zoom, on-screen drawing/text annotation,
+ and image-only snip capture for Linux Mint Cinnamon X11 sessions.
