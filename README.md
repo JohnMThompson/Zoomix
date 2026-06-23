@@ -87,3 +87,7 @@ dpkg-buildpackage -us -uc
 ```
 
 The package installs the `zoomix` binary, desktop entry, icon, man page, and documentation.
+
+## Acknowledgements
+
+Zoomix is inspired by the original ZoomIt utility from Mark Russinovich and Microsoft Sysinternals. This project is an independent Linux Mint/X11 implementation and is not affiliated with or endorsed by Microsoft.
