@@ -3,6 +3,7 @@ mod capture;
 mod config;
 mod geometry;
 mod hotkeys;
+mod input;
 mod logging;
 mod model;
 mod overlay;

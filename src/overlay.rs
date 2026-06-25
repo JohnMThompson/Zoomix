@@ -1,9 +1,10 @@
 use crate::{
     capture,
-    config::{color_for_key, Config},
+    config::Config,
     geometry::{Point, Rect},
+    input::{self, KeyOutcome, PointerRelease, TextStyle, ZoomDirection},
     logging,
-    model::{Annotation, AppState, DrawTool, Mode, DEFAULT_ZOOM_FACTOR},
+    model::{AppState, Mode},
     render, x11,
 };
 use gdk_pixbuf::Pixbuf;
@@ -57,36 +58,21 @@ impl Overlay {
 
     pub fn activate(&self, mode: Mode) {
         logging::info(format!("overlay activate requested: {mode:?}"));
-        if matches!(mode, Mode::Zoom | Mode::LiveZoom | Mode::Snip)
-            || self.background.borrow().is_none()
-        {
-            *self.background.borrow_mut() = capture::capture_root().ok();
-        }
-
+        let pointer = x11::pointer_position().unwrap_or_default();
         {
             let mut state = self.state.borrow_mut();
             let previous_mode = state.mode;
             logging::info(format!(
                 "overlay mode transition: {previous_mode:?} -> {mode:?}"
             ));
-            state.mode = mode;
-            state.clear_interaction();
-            match mode {
-                Mode::Zoom | Mode::LiveZoom if previous_mode == Mode::Idle => {
-                    state.zoom_factor = DEFAULT_ZOOM_FACTOR;
-                    state.zoom_center = x11::pointer_position().unwrap_or(state.zoom_center);
-                }
-                Mode::Draw if previous_mode == Mode::Idle => {
-                    state.zoom_factor = 1.0;
-                    state.zoom_center = Point::new(0, 0);
-                    state.tool = DrawTool::Pen;
-                }
-                Mode::Snip => {
-                    state.zoom_factor = 1.0;
-                    state.zoom_center = Point::new(0, 0);
-                    state.tool = DrawTool::Rectangle;
-                }
-                _ => {}
+            let effect = input::activate_mode(
+                &mut state,
+                mode,
+                pointer,
+                self.background.borrow().is_some(),
+            );
+            if effect.capture_background {
+                *self.background.borrow_mut() = capture::capture_root().ok();
             }
         }
         self.window.show_all();
@@ -137,19 +123,7 @@ impl Overlay {
         self.area.connect_button_press_event(move |_, event| {
             let (x, y) = event.position();
             let mut state = state.borrow_mut();
-            if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
-                return Propagation::Stop;
-            }
-            let point = Point::new(x as i32, y as i32);
-            state.drag_start = Some(point);
-            state.drag_current = Some(point);
-            if matches!(
-                state.tool,
-                DrawTool::Pen | DrawTool::Highlight | DrawTool::Eraser
-            ) {
-                state.current_points.clear();
-                state.current_points.push(point);
-            }
+            input::pointer_press(&mut state, Point::new(x as i32, y as i32));
             Propagation::Stop
         });
 
@@ -158,21 +132,9 @@ impl Overlay {
         self.area.connect_motion_notify_event(move |_, event| {
             let (x, y) = event.position();
             let mut state = state.borrow_mut();
-            if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
-                return Propagation::Stop;
+            if input::pointer_move(&mut state, Point::new(x as i32, y as i32)) {
+                area.queue_draw();
             }
-            if state.drag_start.is_none() {
-                return Propagation::Stop;
-            }
-            let point = Point::new(x as i32, y as i32);
-            state.drag_current = Some(point);
-            if matches!(
-                state.tool,
-                DrawTool::Pen | DrawTool::Highlight | DrawTool::Eraser
-            ) {
-                state.current_points.push(point);
-            }
-            area.queue_draw();
             Propagation::Stop
         });
 
@@ -184,67 +146,19 @@ impl Overlay {
         self.area.connect_button_release_event(move |_, event| {
             let (x, y) = event.position();
             let mut state = state.borrow_mut();
-            if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
-                return Propagation::Stop;
-            }
-            let current = Point::new(x as i32, y as i32);
-            if state.mode == Mode::Snip {
-                let rect = Rect::from_points(state.drag_start.unwrap_or(current), current);
-                if rect.is_empty() {
-                    state.drag_start = None;
-                    state.drag_current = None;
+            match input::pointer_release(&mut state, Point::new(x as i32, y as i32)) {
+                PointerRelease::None => {}
+                PointerRelease::Redraw => area.queue_draw(),
+                PointerRelease::CaptureSnip(rect) => {
+                    drop(state);
+                    window.hide();
+                    while gtk::events_pending() {
+                        gtk::main_iteration_do(false);
+                    }
+                    schedule_snip_capture(config.clone(), clipboard.clone(), rect);
                     area.queue_draw();
-                    return Propagation::Stop;
                 }
-                state.reset_overlay();
-                drop(state);
-                window.hide();
-                while gtk::events_pending() {
-                    gtk::main_iteration_do(false);
-                }
-                schedule_snip_capture(config.clone(), clipboard.clone(), rect);
-                area.queue_draw();
-                return Propagation::Stop;
             }
-
-            let annotation = match state.tool {
-                DrawTool::Pen | DrawTool::Highlight | DrawTool::Eraser
-                    if state.current_points.len() > 1 =>
-                {
-                    let color = if state.tool == DrawTool::Eraser {
-                        crate::model::Color::BLACK
-                    } else {
-                        state.color
-                    };
-                    Some(Annotation::Stroke {
-                        points: std::mem::take(&mut state.current_points),
-                        color,
-                        width: if state.tool == DrawTool::Eraser {
-                            state.stroke_width * 3.0
-                        } else {
-                            state.stroke_width
-                        },
-                        highlight: state.tool == DrawTool::Highlight,
-                    })
-                }
-                DrawTool::Line | DrawTool::Rectangle | DrawTool::Ellipse | DrawTool::Arrow => {
-                    state.drag_start.map(|start| Annotation::Shape {
-                        tool: state.tool,
-                        rect: Rect::from_points(start, current),
-                        start,
-                        end: current,
-                        color: state.color,
-                        width: state.stroke_width,
-                    })
-                }
-                _ => None,
-            };
-            if let Some(annotation) = annotation {
-                state.annotations.push(annotation);
-            }
-            state.drag_start = None;
-            state.drag_current = None;
-            area.queue_draw();
             Propagation::Stop
         });
 
@@ -259,10 +173,8 @@ impl Overlay {
         self.area.connect_scroll_event(move |_, event| {
             let mut state = state.borrow_mut();
             match event.direction() {
-                gdk::ScrollDirection::Up => state.zoom_factor = (state.zoom_factor + 0.25).min(8.0),
-                gdk::ScrollDirection::Down => {
-                    state.zoom_factor = (state.zoom_factor - 0.25).max(1.0)
-                }
+                gdk::ScrollDirection::Up => input::scroll_zoom(&mut state, ZoomDirection::In),
+                gdk::ScrollDirection::Down => input::scroll_zoom(&mut state, ZoomDirection::Out),
                 _ => {}
             }
             area.queue_draw();
@@ -298,146 +210,39 @@ impl OverlayHandles {
         logging::info(format!(
             "overlay keypress name={name} modifiers={modifiers:?}"
         ));
-        if modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
-            match name.as_str() {
-                "1" => {
-                    logging::info("overlay Ctrl+1 -> Zoom");
-                    self.activate_mode(Mode::Zoom);
-                    return;
-                }
-                "2" => {
-                    logging::info("overlay Ctrl+2 -> Draw");
-                    self.activate_mode(Mode::Draw);
-                    return;
-                }
-                "3" => {
-                    logging::info("overlay Ctrl+3 -> Snip");
-                    self.activate_mode(Mode::Snip);
-                    return;
-                }
-                "4" => {
-                    logging::info("overlay Ctrl+4 -> LiveZoom");
-                    self.activate_mode(Mode::LiveZoom);
-                    return;
-                }
-                _ => {}
-            }
-        }
 
-        let mut state = self.state.borrow_mut();
-        match name.as_str() {
-            "Escape" => {
-                state.reset_overlay();
-                self.window.hide();
+        let ctrl = modifiers.contains(gdk::ModifierType::CONTROL_MASK);
+        let mode = self.state.borrow().mode;
+        let Some(action) = input::key_to_action(mode, &name, ctrl) else {
+            return;
+        };
+
+        let text_style = TextStyle {
+            font: self.config.drawing.font.clone(),
+            size: self.config.drawing.font_size,
+        };
+        let outcome = {
+            let mut state = self.state.borrow_mut();
+            input::apply_key_action(&mut state, action, &text_style)
+        };
+
+        match outcome {
+            KeyOutcome::None => {}
+            KeyOutcome::Redraw => self.area.queue_draw(),
+            KeyOutcome::HideOverlay => self.window.hide(),
+            KeyOutcome::Activate(mode) => {
+                logging::info(format!("overlay local hotkey -> {mode:?}"));
+                self.activate_mode(mode);
             }
-            "BackSpace" | "z" | "Z" => {
-                state.annotations.pop();
-                self.area.queue_draw();
-            }
-            "Delete" | "c" | "C" => {
-                state.annotations.clear();
-                self.area.queue_draw();
-            }
-            "plus" | "equal" => {
-                state.zoom_factor = (state.zoom_factor + 0.25).min(8.0);
-                self.area.queue_draw();
-            }
-            "minus" => {
-                state.zoom_factor = (state.zoom_factor - 0.25).max(1.0);
-                self.area.queue_draw();
-            }
-            "R" if !matches!(state.mode, Mode::Text | Mode::Zoom | Mode::LiveZoom) => {
-                state.color = crate::model::Color::RED;
-            }
-            "p" | "P" | "1" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Pen)
-            }
-            "r" | "2" if !matches!(state.mode, Mode::Text | Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Rectangle)
-            }
-            "a" | "A" | "3" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Arrow)
-            }
-            "l" | "L" | "4" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Line)
-            }
-            "e" | "E" | "5" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Ellipse)
-            }
-            "h" | "H" | "6" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Highlight)
-            }
-            "x" | "X" | "7" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                self.set_tool(&mut state, DrawTool::Eraser)
-            }
-            "Tab" | "space" if !matches!(state.mode, Mode::Zoom | Mode::LiveZoom) => {
-                let next = match state.tool {
-                    DrawTool::Pen => DrawTool::Rectangle,
-                    DrawTool::Rectangle => DrawTool::Arrow,
-                    DrawTool::Arrow => DrawTool::Line,
-                    DrawTool::Line => DrawTool::Ellipse,
-                    DrawTool::Ellipse => DrawTool::Highlight,
-                    DrawTool::Highlight => DrawTool::Eraser,
-                    DrawTool::Eraser => DrawTool::Pen,
-                };
-                self.set_tool(&mut state, next);
-            }
-            "t" | "T" => state.mode = Mode::Text,
-            "Return" if state.mode == Mode::Text => {
-                let at = state
-                    .drag_current
-                    .or(state.drag_start)
-                    .unwrap_or(Point::new(80, 80));
-                let text = std::mem::take(&mut state.pending_text);
-                if !text.is_empty() {
-                    let color = state.color;
-                    state.annotations.push(Annotation::Text {
-                        at,
-                        text,
-                        color,
-                        font: self.config.drawing.font.clone(),
-                        size: self.config.drawing.font_size,
-                    });
-                }
-                state.mode = Mode::Draw;
-                self.area.queue_draw();
-            }
-            "Return" if state.mode == Mode::Snip => {
-                let rect = Rect::from_points(
-                    state.drag_start.unwrap_or(Point::new(0, 0)),
-                    state.drag_current.unwrap_or(Point::new(0, 0)),
-                );
-                if rect.is_empty() {
-                    state.drag_start = None;
-                    state.drag_current = None;
-                    self.area.queue_draw();
-                    return;
-                }
-                state.reset_overlay();
-                drop(state);
+            KeyOutcome::CaptureSnip(rect) => {
                 self.window.hide();
                 while gtk::events_pending() {
                     gtk::main_iteration_do(false);
                 }
                 schedule_snip_capture(self.config.clone(), self.clipboard.clone(), rect);
-            }
-            _ => {
-                if let Some(ch) = name.chars().next().and_then(color_for_key) {
-                    state.color = ch;
-                } else if state.mode == Mode::Text && name.len() == 1 {
-                    state.pending_text.push_str(&name);
-                }
+                self.area.queue_draw();
             }
         }
-    }
-
-    fn set_tool(&self, state: &mut AppState, tool: DrawTool) {
-        if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
-            state.mode = Mode::Draw;
-        }
-        state.tool = tool;
-        state.clear_interaction();
-        self.area.queue_draw();
     }
 
     fn activate_mode(&self, mode: Mode) {
@@ -449,33 +254,17 @@ impl OverlayHandles {
             }
         }
 
-        if matches!(mode, Mode::Zoom | Mode::LiveZoom | Mode::Snip)
-            || self.background.borrow().is_none()
-        {
-            *self.background.borrow_mut() = capture::capture_root().ok();
-        }
-
+        let pointer = x11::pointer_position().unwrap_or_default();
         {
             let mut state = self.state.borrow_mut();
-            let previous_mode = state.mode;
-            state.mode = mode;
-            state.clear_interaction();
-            match mode {
-                Mode::Zoom | Mode::LiveZoom if previous_mode == Mode::Idle => {
-                    state.zoom_factor = DEFAULT_ZOOM_FACTOR;
-                    state.zoom_center = x11::pointer_position().unwrap_or(state.zoom_center);
-                }
-                Mode::Draw if previous_mode == Mode::Idle => {
-                    state.zoom_factor = 1.0;
-                    state.zoom_center = Point::new(0, 0);
-                    state.tool = DrawTool::Pen;
-                }
-                Mode::Snip => {
-                    state.zoom_factor = 1.0;
-                    state.zoom_center = Point::new(0, 0);
-                    state.tool = DrawTool::Rectangle;
-                }
-                _ => {}
+            let effect = input::activate_mode(
+                &mut state,
+                mode,
+                pointer,
+                self.background.borrow().is_some(),
+            );
+            if effect.capture_background {
+                *self.background.borrow_mut() = capture::capture_root().ok();
             }
         }
 
