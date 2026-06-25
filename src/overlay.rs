@@ -58,18 +58,8 @@ impl Overlay {
     }
 
     pub fn activate(&self, mode: Mode) {
-        logging::info(format!("overlay activate requested: {mode:?}"));
-        let pointer = x11::pointer_position().unwrap_or_default();
-        {
-            let mut state = self.state.borrow_mut();
-            let previous_mode = state.mode;
-            logging::info(format!(
-                "overlay mode transition: {previous_mode:?} -> {mode:?}"
-            ));
-            activate_state_with_capture(&mut state, &self.background, mode, pointer);
-        }
-        present_overlay_window(&self.window, &self.area, "global activation");
-        logging::info(format!("overlay presented for mode {mode:?}"));
+        self.clone_handles()
+            .activate_mode_from(mode, ActivationSource::Global);
     }
 
     fn connect_events(&self) {
@@ -232,8 +222,15 @@ impl OverlayHandles {
     }
 
     fn activate_mode(&self, mode: Mode) {
-        logging::info(format!("overlay local activate requested: {mode:?}"));
-        if mode == Mode::Snip {
+        self.activate_mode_from(mode, ActivationSource::Local);
+    }
+
+    fn activate_mode_from(&self, mode: Mode, source: ActivationSource) {
+        logging::info(format!(
+            "overlay {} activate requested: {mode:?}",
+            source.label()
+        ));
+        if source.hides_before_capture(mode) {
             self.window.hide();
             while gtk::events_pending() {
                 gtk::main_iteration_do(false);
@@ -243,11 +240,44 @@ impl OverlayHandles {
         let pointer = x11::pointer_position().unwrap_or_default();
         {
             let mut state = self.state.borrow_mut();
+            let previous_mode = state.mode;
+            logging::info(format!(
+                "overlay mode transition: {previous_mode:?} -> {mode:?}"
+            ));
             activate_state_with_capture(&mut state, &self.background, mode, pointer);
         }
 
-        present_overlay_window(&self.window, &self.area, "local activation");
-        logging::info(format!("overlay locally presented for mode {mode:?}"));
+        present_overlay_window(&self.window, &self.area, source.activation_label());
+        logging::info(format!(
+            "overlay {} presented for mode {mode:?}",
+            source.label()
+        ));
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActivationSource {
+    Global,
+    Local,
+}
+
+impl ActivationSource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Local => "local",
+        }
+    }
+
+    fn activation_label(self) -> &'static str {
+        match self {
+            Self::Global => "global activation",
+            Self::Local => "local activation",
+        }
+    }
+
+    fn hides_before_capture(self, mode: Mode) -> bool {
+        self == Self::Local && mode == Mode::Snip
     }
 }
 
