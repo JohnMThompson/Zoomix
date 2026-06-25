@@ -75,17 +75,7 @@ impl Overlay {
                 *self.background.borrow_mut() = capture::capture_root().ok();
             }
         }
-        self.window.show_all();
-        self.window.fullscreen();
-        self.window.set_keep_above(true);
-        self.window.present();
-        self.area.grab_focus();
-        self.area.queue_draw();
-        let area = self.area.clone();
-        glib::idle_add_local_once(move || {
-            logging::info("overlay idle redraw after global activation");
-            area.queue_draw();
-        });
+        present_overlay_window(&self.window, &self.area, "global activation");
         logging::info(format!("overlay presented for mode {mode:?}"));
     }
 
@@ -268,19 +258,36 @@ impl OverlayHandles {
             }
         }
 
-        self.window.show_all();
-        self.window.fullscreen();
-        self.window.set_keep_above(true);
-        self.window.present();
-        self.area.grab_focus();
-        self.area.queue_draw();
-        let area = self.area.clone();
-        glib::idle_add_local_once(move || {
-            logging::info("overlay idle redraw after local activation");
-            area.queue_draw();
-        });
+        present_overlay_window(&self.window, &self.area, "local activation");
         logging::info(format!("overlay locally presented for mode {mode:?}"));
     }
+}
+
+fn present_overlay_window(
+    window: &gtk::ApplicationWindow,
+    area: &gtk::DrawingArea,
+    activation_source: &'static str,
+) {
+    window.show_all();
+    window.fullscreen();
+    window.set_keep_above(true);
+    window.set_focus(Some(area));
+    window.present();
+    area.grab_focus();
+    area.queue_draw();
+
+    if let Some(display) = gdk::Display::default() {
+        display.flush();
+    }
+    while gtk::events_pending() {
+        gtk::main_iteration_do(false);
+    }
+
+    let area = area.clone();
+    glib::idle_add_local_once(move || {
+        logging::info(format!("overlay idle redraw after {activation_source}"));
+        area.queue_draw();
+    });
 }
 
 fn schedule_snip_capture(
