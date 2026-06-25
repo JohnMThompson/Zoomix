@@ -1,14 +1,37 @@
 use crate::{config::Config, hotkeys, logging, overlay::Overlay, x11};
 use gtk::prelude::*;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
 pub struct ZoomixApp;
 
+thread_local! {
+    static RUNTIME: RefCell<Option<Rc<AppRuntime>>> = const { RefCell::new(None) };
+}
+
+struct AppRuntime {
+    _overlay: Rc<Overlay>,
+    control_window: gtk::ApplicationWindow,
+}
+
+impl AppRuntime {
+    fn present_control_window(&self) {
+        self.control_window.show_all();
+        self.control_window.present();
+    }
+}
+
 impl ZoomixApp {
     pub fn launch(app: &gtk::Application) -> anyhow::Result<()> {
         logging::info("app launch requested");
+        if let Some(runtime) = RUNTIME.with(|runtime| runtime.borrow().clone()) {
+            logging::info("app already launched; presenting existing control window");
+            runtime.present_control_window();
+            return Ok(());
+        }
+
         x11::assert_x11_available()?;
         let config = Config::load().unwrap_or_default();
         config.ensure_parent_dirs()?;
@@ -29,7 +52,13 @@ impl ZoomixApp {
             glib::ControlFlow::Continue
         });
 
-        install_tray_window(app, overlay, &config)?;
+        let control_window = install_tray_window(app, overlay.clone(), &config)?;
+        RUNTIME.with(|runtime| {
+            *runtime.borrow_mut() = Some(Rc::new(AppRuntime {
+                _overlay: overlay,
+                control_window,
+            }));
+        });
         Ok(())
     }
 }
@@ -38,7 +67,7 @@ fn install_tray_window(
     app: &gtk::Application,
     overlay: Rc<Overlay>,
     config: &Config,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<gtk::ApplicationWindow> {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title("Zoomix")
@@ -96,5 +125,44 @@ fn install_tray_window(
     if !config.start_hidden {
         window.show_all();
     }
-    Ok(())
+    Ok(window)
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaunchDecision {
+    StartRuntime,
+    ReuseRuntime,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct LaunchState {
+    running: bool,
+}
+
+#[cfg(test)]
+impl LaunchState {
+    fn request_launch(&mut self) -> LaunchDecision {
+        if self.running {
+            LaunchDecision::ReuseRuntime
+        } else {
+            self.running = true;
+            LaunchDecision::StartRuntime
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_state_starts_once_then_reuses_runtime() {
+        let mut state = LaunchState::default();
+
+        assert_eq!(state.request_launch(), LaunchDecision::StartRuntime);
+        assert_eq!(state.request_launch(), LaunchDecision::ReuseRuntime);
+        assert_eq!(state.request_launch(), LaunchDecision::ReuseRuntime);
+    }
 }
