@@ -147,22 +147,20 @@ pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
     }
 
     let annotation = match state.tool {
-        DrawTool::Pen | DrawTool::Highlight | DrawTool::Eraser
-            if state.current_points.len() > 1 =>
-        {
-            let color = if state.tool == DrawTool::Eraser {
-                Color::BLACK
-            } else {
-                state.color
-            };
+        DrawTool::Eraser if state.current_points.len() > 1 => {
+            let points = std::mem::take(&mut state.current_points);
+            erase_intersecting_annotations(
+                &mut state.annotations,
+                &points,
+                state.stroke_width * 3.0,
+            );
+            None
+        }
+        DrawTool::Pen | DrawTool::Highlight if state.current_points.len() > 1 => {
             Some(Annotation::Stroke {
                 points: std::mem::take(&mut state.current_points),
-                color,
-                width: if state.tool == DrawTool::Eraser {
-                    state.stroke_width * 3.0
-                } else {
-                    state.stroke_width
-                },
+                color: state.color,
+                width: state.stroke_width,
                 highlight: state.tool == DrawTool::Highlight,
             })
         }
@@ -182,6 +180,7 @@ pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
     if let Some(annotation) = annotation {
         state.annotations.push(annotation);
     }
+    state.current_points.clear();
     state.drag_start = None;
     state.drag_current = None;
     PointerRelease::Redraw
@@ -375,6 +374,168 @@ fn next_tool(tool: DrawTool) -> DrawTool {
     }
 }
 
+fn erase_intersecting_annotations(
+    annotations: &mut Vec<Annotation>,
+    eraser_points: &[Point],
+    eraser_width: f64,
+) {
+    let radius = eraser_width / 2.0;
+    annotations.retain(|annotation| !annotation_intersects_path(annotation, eraser_points, radius));
+}
+
+fn annotation_intersects_path(
+    annotation: &Annotation,
+    eraser_points: &[Point],
+    radius: f64,
+) -> bool {
+    match annotation {
+        Annotation::Stroke { points, width, .. } => {
+            paths_intersect(eraser_points, points, radius + width / 2.0)
+        }
+        Annotation::Shape {
+            tool,
+            rect,
+            start,
+            end,
+            width,
+            ..
+        } => match tool {
+            DrawTool::Line | DrawTool::Arrow => {
+                path_intersects_segment(eraser_points, *start, *end, radius + width / 2.0)
+            }
+            DrawTool::Rectangle | DrawTool::Ellipse => {
+                path_intersects_rect(eraser_points, *rect, radius + width / 2.0)
+            }
+            _ => false,
+        },
+        Annotation::Text { at, .. } => eraser_points
+            .iter()
+            .any(|point| point_distance_sq(*point, *at) <= radius * radius),
+    }
+}
+
+fn paths_intersect(a: &[Point], b: &[Point], threshold: f64) -> bool {
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a.len() == 1 || b.len() == 1 {
+        return a.iter().any(|left| {
+            b.iter()
+                .any(|right| point_distance_sq(*left, *right) <= threshold * threshold)
+        });
+    }
+
+    a.windows(2).any(|left| {
+        b.windows(2)
+            .any(|right| segments_within(left[0], left[1], right[0], right[1], threshold))
+    })
+}
+
+fn path_intersects_segment(path: &[Point], start: Point, end: Point, threshold: f64) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    if path.len() == 1 {
+        return point_to_segment_distance_sq(path[0], start, end) <= threshold * threshold;
+    }
+    path.windows(2)
+        .any(|segment| segments_within(segment[0], segment[1], start, end, threshold))
+}
+
+fn path_intersects_rect(path: &[Point], rect: Rect, threshold: f64) -> bool {
+    if path
+        .iter()
+        .any(|point| point_in_expanded_rect(*point, rect, threshold))
+    {
+        return true;
+    }
+
+    let top_left = Point::new(rect.x, rect.y);
+    let top_right = Point::new(rect.x + rect.width, rect.y);
+    let bottom_left = Point::new(rect.x, rect.y + rect.height);
+    let bottom_right = Point::new(rect.x + rect.width, rect.y + rect.height);
+    [
+        (top_left, top_right),
+        (top_right, bottom_right),
+        (bottom_right, bottom_left),
+        (bottom_left, top_left),
+    ]
+    .into_iter()
+    .any(|(start, end)| path_intersects_segment(path, start, end, threshold))
+}
+
+fn point_in_expanded_rect(point: Point, rect: Rect, padding: f64) -> bool {
+    let padding = padding.ceil() as i32;
+    point.x >= rect.x - padding
+        && point.x <= rect.x + rect.width + padding
+        && point.y >= rect.y - padding
+        && point.y <= rect.y + rect.height + padding
+}
+
+fn segments_within(a: Point, b: Point, c: Point, d: Point, threshold: f64) -> bool {
+    segments_intersect(a, b, c, d)
+        || point_to_segment_distance_sq(a, c, d) <= threshold * threshold
+        || point_to_segment_distance_sq(b, c, d) <= threshold * threshold
+        || point_to_segment_distance_sq(c, a, b) <= threshold * threshold
+        || point_to_segment_distance_sq(d, a, b) <= threshold * threshold
+}
+
+fn segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool {
+    let o1 = orientation(a, b, c);
+    let o2 = orientation(a, b, d);
+    let o3 = orientation(c, d, a);
+    let o4 = orientation(c, d, b);
+
+    if o1 == 0 && point_on_segment(c, a, b)
+        || o2 == 0 && point_on_segment(d, a, b)
+        || o3 == 0 && point_on_segment(a, c, d)
+        || o4 == 0 && point_on_segment(b, c, d)
+    {
+        return true;
+    }
+
+    (o1 > 0) != (o2 > 0) && (o3 > 0) != (o4 > 0)
+}
+
+fn orientation(a: Point, b: Point, c: Point) -> i64 {
+    let value = (b.y - a.y) as i64 * (c.x - b.x) as i64 - (b.x - a.x) as i64 * (c.y - b.y) as i64;
+    value.signum()
+}
+
+fn point_on_segment(point: Point, start: Point, end: Point) -> bool {
+    point.x >= start.x.min(end.x)
+        && point.x <= start.x.max(end.x)
+        && point.y >= start.y.min(end.y)
+        && point.y <= start.y.max(end.y)
+}
+
+fn point_to_segment_distance_sq(point: Point, start: Point, end: Point) -> f64 {
+    let px = point.x as f64;
+    let py = point.y as f64;
+    let sx = start.x as f64;
+    let sy = start.y as f64;
+    let ex = end.x as f64;
+    let ey = end.y as f64;
+    let dx = ex - sx;
+    let dy = ey - sy;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq == 0.0 {
+        return point_distance_sq(point, start);
+    }
+    let t = (((px - sx) * dx + (py - sy) * dy) / len_sq).clamp(0.0, 1.0);
+    let x = sx + t * dx;
+    let y = sy + t * dy;
+    let x_diff = px - x;
+    let y_diff = py - y;
+    x_diff * x_diff + y_diff * y_diff
+}
+
+fn point_distance_sq(a: Point, b: Point) -> f64 {
+    let x = (a.x - b.x) as f64;
+    let y = (a.y - b.y) as f64;
+    x * x + y * y
+}
+
 fn mode_label(mode: Mode) -> &'static str {
     match mode {
         Mode::Idle => "idle",
@@ -544,6 +705,65 @@ mod tests {
 
         assert_eq!(state.text_anchor, Some(Point::new(40, 50)));
         assert!(state.current_points.is_empty());
+        assert!(state.annotations.is_empty());
+    }
+
+    #[test]
+    fn eraser_removes_intersected_strokes_without_adding_black_stroke() {
+        let mut state = AppState {
+            mode: Mode::Draw,
+            tool: DrawTool::Eraser,
+            annotations: vec![
+                Annotation::Stroke {
+                    points: vec![Point::new(10, 10), Point::new(100, 10)],
+                    color: Color::RED,
+                    width: 4.0,
+                    highlight: false,
+                },
+                Annotation::Stroke {
+                    points: vec![Point::new(10, 100), Point::new(100, 100)],
+                    color: Color::BLUE,
+                    width: 4.0,
+                    highlight: false,
+                },
+            ],
+            ..Default::default()
+        };
+
+        pointer_press(&mut state, Point::new(50, 0));
+        pointer_move(&mut state, Point::new(50, 20));
+        assert_eq!(
+            pointer_release(&mut state, Point::new(50, 20)),
+            PointerRelease::Redraw
+        );
+
+        assert_eq!(state.annotations.len(), 1);
+        assert!(matches!(
+            state.annotations[0],
+            Annotation::Stroke { color, .. } if color == Color::BLUE
+        ));
+    }
+
+    #[test]
+    fn eraser_removes_intersected_shapes() {
+        let mut state = AppState {
+            mode: Mode::Draw,
+            tool: DrawTool::Eraser,
+            annotations: vec![Annotation::Shape {
+                tool: DrawTool::Rectangle,
+                rect: Rect::new(20, 20, 40, 30),
+                start: Point::new(20, 20),
+                end: Point::new(60, 50),
+                color: Color::GREEN,
+                width: 4.0,
+            }],
+            ..Default::default()
+        };
+
+        pointer_press(&mut state, Point::new(40, 0));
+        pointer_move(&mut state, Point::new(40, 100));
+        pointer_release(&mut state, Point::new(40, 100));
+
         assert!(state.annotations.is_empty());
     }
 
