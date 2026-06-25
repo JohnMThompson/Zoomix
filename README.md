@@ -79,6 +79,8 @@ cargo run
 
 Zoomix reads `~/.config/zoomix/config.toml`. If the file is absent, defaults are used. See [examples/config.toml](examples/config.toml).
 
+Hotkeys use `+`-separated modifier and key names, for example `Ctrl+1`, `Alt+Shift+Z`, or `Super+S`. Supported modifiers are `Ctrl`, `Alt`, `Shift`, and `Super`.
+
 ## Logging
 
 Zoomix writes normal startup, mode transition, save, and error logs to `~/.cache/zoomix/zoomix.log`.

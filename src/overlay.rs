@@ -2,6 +2,7 @@ use crate::{
     capture,
     config::Config,
     geometry::{Point, Rect},
+    hotkeys::{self, HotkeyModifiers},
     input::{self, KeyOutcome, PointerRelease, TextStyle, ZoomDirection},
     logging,
     model::{AppState, Mode},
@@ -193,7 +194,14 @@ impl OverlayHandles {
             "overlay keypress name={name} modifiers={modifiers:?}"
         ));
 
-        let ctrl = modifiers.contains(gdk::ModifierType::CONTROL_MASK);
+        let hotkey_modifiers = HotkeyModifiers::from_gdk(modifiers);
+        if let Some(mode) = hotkeys::mode_for_event(&self.config.hotkeys, &name, hotkey_modifiers) {
+            logging::info(format!("overlay configured hotkey -> {mode:?}"));
+            self.activate_mode(mode);
+            return;
+        }
+
+        let ctrl = hotkey_modifiers.ctrl;
         let mode = self.state.borrow().mode;
         let Some(action) = input::key_to_action(mode, &name, ctrl) else {
             return;
@@ -212,10 +220,6 @@ impl OverlayHandles {
             KeyOutcome::None => {}
             KeyOutcome::Redraw => self.area.queue_draw(),
             KeyOutcome::HideOverlay => self.window.hide(),
-            KeyOutcome::Activate(mode) => {
-                logging::info(format!("overlay local hotkey -> {mode:?}"));
-                self.activate_mode(mode);
-            }
             KeyOutcome::CaptureSnip(rect) => {
                 self.window.hide();
                 while gtk::events_pending() {

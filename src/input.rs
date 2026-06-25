@@ -18,7 +18,6 @@ pub enum PointerRelease {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeyAction {
-    Activate(Mode),
     Escape,
     Undo,
     Clear,
@@ -37,7 +36,6 @@ pub enum KeyOutcome {
     None,
     Redraw,
     HideOverlay,
-    Activate(Mode),
     CaptureSnip(Rect),
 }
 
@@ -177,13 +175,7 @@ pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
 
 pub fn key_to_action(mode: Mode, name: &str, ctrl: bool) -> Option<KeyAction> {
     if ctrl {
-        return match name {
-            "1" => Some(KeyAction::Activate(Mode::Zoom)),
-            "2" => Some(KeyAction::Activate(Mode::Draw)),
-            "3" => Some(KeyAction::Activate(Mode::Snip)),
-            "4" => Some(KeyAction::Activate(Mode::LiveZoom)),
-            _ => None,
-        };
+        return None;
     }
 
     if mode == Mode::Text {
@@ -246,7 +238,6 @@ pub fn apply_key_action(
     text_style: &TextStyle,
 ) -> KeyOutcome {
     match action {
-        KeyAction::Activate(mode) => KeyOutcome::Activate(mode),
         KeyAction::Escape => {
             state.reset_overlay();
             KeyOutcome::HideOverlay
@@ -424,26 +415,6 @@ mod tests {
         assert_eq!(state.mode, Mode::Draw);
         assert_eq!(state.zoom_factor, 2.0);
         assert_eq!(state.zoom_center, Point::new(100, 120));
-    }
-
-    #[test]
-    fn maps_control_hotkeys_to_mode_actions() {
-        assert_eq!(
-            key_to_action(Mode::Idle, "1", true),
-            Some(KeyAction::Activate(Mode::Zoom))
-        );
-        assert_eq!(
-            key_to_action(Mode::Zoom, "2", true),
-            Some(KeyAction::Activate(Mode::Draw))
-        );
-        assert_eq!(
-            key_to_action(Mode::Draw, "3", true),
-            Some(KeyAction::Activate(Mode::Snip))
-        );
-        assert_eq!(
-            key_to_action(Mode::Draw, "4", true),
-            Some(KeyAction::Activate(Mode::LiveZoom))
-        );
     }
 
     #[test]
