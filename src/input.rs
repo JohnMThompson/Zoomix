@@ -94,6 +94,14 @@ pub fn pointer_press(state: &mut AppState, point: Point) {
         return;
     }
 
+    if state.mode == Mode::Text {
+        state.text_anchor = Some(point);
+        state.drag_start = None;
+        state.drag_current = None;
+        state.current_points.clear();
+        return;
+    }
+
     state.drag_start = Some(point);
     state.drag_current = Some(point);
     if is_freehand_tool(state.tool) {
@@ -103,7 +111,10 @@ pub fn pointer_press(state: &mut AppState, point: Point) {
 }
 
 pub fn pointer_move(state: &mut AppState, point: Point) -> bool {
-    if matches!(state.mode, Mode::Idle | Mode::Zoom | Mode::LiveZoom) || state.drag_start.is_none()
+    if matches!(
+        state.mode,
+        Mode::Idle | Mode::Zoom | Mode::LiveZoom | Mode::Text
+    ) || state.drag_start.is_none()
     {
         return false;
     }
@@ -116,7 +127,10 @@ pub fn pointer_move(state: &mut AppState, point: Point) -> bool {
 }
 
 pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
-    if matches!(state.mode, Mode::Idle | Mode::Zoom | Mode::LiveZoom) {
+    if matches!(
+        state.mode,
+        Mode::Idle | Mode::Zoom | Mode::LiveZoom | Mode::Text
+    ) {
         return PointerRelease::None;
     }
 
@@ -327,7 +341,8 @@ pub enum ZoomDirection {
 
 fn submit_text(state: &mut AppState, text_style: &TextStyle) {
     let at = state
-        .drag_current
+        .text_anchor
+        .or(state.drag_current)
         .or(state.drag_start)
         .unwrap_or(Point::new(80, 80));
     let text = std::mem::take(&mut state.pending_text);
@@ -340,6 +355,7 @@ fn submit_text(state: &mut AppState, text_style: &TextStyle) {
             size: text_style.size,
         });
     }
+    state.text_anchor = None;
     state.mode = Mode::Draw;
 }
 
@@ -465,7 +481,7 @@ mod tests {
         let mut state = AppState {
             mode: Mode::Text,
             color: Color::BLUE,
-            drag_current: Some(Point::new(12, 14)),
+            text_anchor: Some(Point::new(12, 14)),
             ..Default::default()
         };
 
@@ -489,6 +505,46 @@ mod tests {
             Annotation::Text { at, ref text, color, .. }
                 if at == Point::new(12, 14) && text == "ab" && color == Color::BLUE
         ));
+    }
+
+    #[test]
+    fn text_mode_prioritizes_text_keys_over_shortcuts() {
+        assert_eq!(
+            key_to_action(Mode::Text, "r", false),
+            Some(KeyAction::InsertText("r".to_string()))
+        );
+        assert_eq!(
+            key_to_action(Mode::Text, "g", false),
+            Some(KeyAction::InsertText("g".to_string()))
+        );
+        assert_eq!(
+            key_to_action(Mode::Text, "BackSpace", false),
+            Some(KeyAction::Backspace)
+        );
+        assert_eq!(
+            key_to_action(Mode::Draw, "g", false),
+            Some(KeyAction::SetColor(Color::GREEN))
+        );
+    }
+
+    #[test]
+    fn text_mode_click_sets_anchor_without_drawing() {
+        let mut state = AppState {
+            mode: Mode::Text,
+            tool: DrawTool::Pen,
+            ..Default::default()
+        };
+
+        pointer_press(&mut state, Point::new(40, 50));
+        assert!(!pointer_move(&mut state, Point::new(80, 90)));
+        assert_eq!(
+            pointer_release(&mut state, Point::new(80, 90)),
+            PointerRelease::None
+        );
+
+        assert_eq!(state.text_anchor, Some(Point::new(40, 50)));
+        assert!(state.current_points.is_empty());
+        assert!(state.annotations.is_empty());
     }
 
     #[test]

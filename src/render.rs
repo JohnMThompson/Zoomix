@@ -26,6 +26,7 @@ pub fn draw_overlay(
     for annotation in &state.annotations {
         draw_annotation(cr, annotation);
     }
+    draw_pending_text(cr, state);
 
     if state.current_points.len() > 1 {
         stroke_points(
@@ -193,6 +194,15 @@ fn draw_text(cr: &Context, at: Point, text: &str, color: Color, font: &str, size
     layout.set_text(text);
     cr.move_to(at.x as f64, at.y as f64);
     pangocairo::show_layout(cr, &layout);
+}
+
+fn draw_pending_text(cr: &Context, state: &AppState) {
+    if state.mode != Mode::Text || state.pending_text.is_empty() {
+        return;
+    }
+
+    let at = state.text_anchor.unwrap_or(Point::new(80, 80));
+    draw_text(cr, at, &state.pending_text, state.color, "Sans", 24.0);
 }
 
 fn draw_hud(cr: &Context, state: &AppState) {

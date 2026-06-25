@@ -91,6 +91,7 @@ pub struct AppState {
     pub drag_start: Option<Point>,
     pub drag_current: Option<Point>,
     pub pending_text: String,
+    pub text_anchor: Option<Point>,
     pub status_message: Option<String>,
 }
 
@@ -108,6 +109,7 @@ impl Default for AppState {
             drag_start: None,
             drag_current: None,
             pending_text: String::new(),
+            text_anchor: None,
             status_message: None,
         }
     }
@@ -119,6 +121,7 @@ impl AppState {
         self.drag_start = None;
         self.drag_current = None;
         self.pending_text.clear();
+        self.text_anchor = None;
     }
 
     pub fn reset_overlay(&mut self) {
