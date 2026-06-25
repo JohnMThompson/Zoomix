@@ -9,7 +9,7 @@ use crate::{
 use gdk_pixbuf::Pixbuf;
 use glib::Propagation;
 use gtk::prelude::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 pub struct Overlay {
     window: gtk::ApplicationWindow,
@@ -202,9 +202,7 @@ impl Overlay {
                 while gtk::events_pending() {
                     gtk::main_iteration_do(false);
                 }
-                if let Err(err) = save_snip_rect(&config, &clipboard, rect) {
-                    eprintln!("zoomix snip failed: {err:#}");
-                }
+                schedule_snip_capture(config.clone(), clipboard.clone(), rect);
                 area.queue_draw();
                 return Propagation::Stop;
             }
@@ -421,9 +419,7 @@ impl OverlayHandles {
                 while gtk::events_pending() {
                     gtk::main_iteration_do(false);
                 }
-                if let Err(err) = save_snip_rect(&self.config, &self.clipboard, rect) {
-                    eprintln!("zoomix snip failed: {err:#}");
-                }
+                schedule_snip_capture(self.config.clone(), self.clipboard.clone(), rect);
             }
             _ => {
                 if let Some(ch) = name.chars().next().and_then(color_for_key) {
@@ -496,6 +492,23 @@ impl OverlayHandles {
         });
         logging::info(format!("overlay locally presented for mode {mode:?}"));
     }
+}
+
+fn schedule_snip_capture(
+    config: Config,
+    clipboard_store: Rc<RefCell<Option<arboard::Clipboard>>>,
+    rect: Rect,
+) {
+    logging::info(format!(
+        "scheduling snip capture after overlay hide: x={} y={} width={} height={}",
+        rect.x, rect.y, rect.width, rect.height
+    ));
+    glib::timeout_add_local_once(Duration::from_millis(120), move || {
+        if let Err(err) = save_snip_rect(&config, &clipboard_store, rect) {
+            logging::error(format!("snip failed: {err:#}"));
+            eprintln!("zoomix snip failed: {err:#}");
+        }
+    });
 }
 
 fn save_snip_rect(
