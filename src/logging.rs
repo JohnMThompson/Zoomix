@@ -8,8 +8,12 @@ use std::{
 
 static LOG_FILE: OnceLock<Mutex<File>> = OnceLock::new();
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static VERBOSE: OnceLock<bool> = OnceLock::new();
 
 pub fn init() -> anyhow::Result<PathBuf> {
+    let verbose = verbose_from_env();
+    let _ = VERBOSE.set(verbose);
+
     let dir = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("zoomix");
@@ -19,6 +23,9 @@ pub fn init() -> anyhow::Result<PathBuf> {
     let _ = LOG_PATH.set(path.clone());
     let _ = LOG_FILE.set(Mutex::new(file));
     info("logging initialized");
+    if verbose {
+        info("verbose logging enabled");
+    }
     Ok(path)
 }
 
@@ -30,8 +37,29 @@ pub fn info(message: impl AsRef<str>) {
     write("INFO", message.as_ref());
 }
 
+pub fn verbose(message: impl AsRef<str>) {
+    if is_verbose() {
+        write("DEBUG", message.as_ref());
+    }
+}
+
 pub fn error(message: impl AsRef<str>) {
     write("ERROR", message.as_ref());
+}
+
+fn is_verbose() -> bool {
+    *VERBOSE.get_or_init(verbose_from_env)
+}
+
+fn verbose_from_env() -> bool {
+    std::env::var("ZOOMIX_VERBOSE_LOG")
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn write(level: &str, message: &str) {

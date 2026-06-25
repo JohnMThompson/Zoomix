@@ -92,7 +92,7 @@ impl Overlay {
         let background = self.background.clone();
         self.area.connect_draw(move |area, cr| {
             let alloc = area.allocation();
-            logging::info(format!(
+            logging::verbose(format!(
                 "overlay draw mode={:?} size={}x{} has_background={}",
                 state.borrow().mode,
                 alloc.width(),
@@ -197,7 +197,7 @@ struct OverlayHandles {
 impl OverlayHandles {
     fn handle_key(&self, keyval: gdk::keys::Key, modifiers: gdk::ModifierType) {
         let name = keyval.name().map(|s| s.to_string()).unwrap_or_default();
-        logging::info(format!(
+        logging::verbose(format!(
             "overlay keypress name={name} modifiers={modifiers:?}"
         ));
 
@@ -285,7 +285,7 @@ fn present_overlay_window(
 
     let area = area.clone();
     glib::idle_add_local_once(move || {
-        logging::info(format!("overlay idle redraw after {activation_source}"));
+        logging::verbose(format!("overlay idle redraw after {activation_source}"));
         area.queue_draw();
     });
 }

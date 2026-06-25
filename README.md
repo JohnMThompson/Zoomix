@@ -79,6 +79,17 @@ cargo run
 
 Zoomix reads `~/.config/zoomix/config.toml`. If the file is absent, defaults are used. See [examples/config.toml](examples/config.toml).
 
+## Logging
+
+Zoomix writes normal startup, mode transition, save, and error logs to `~/.cache/zoomix/zoomix.log`.
+High-volume diagnostics such as raw key events and per-frame overlay draws are disabled by default.
+
+Enable verbose logging for troubleshooting:
+
+```bash
+ZOOMIX_VERBOSE_LOG=1 cargo run
+```
+
 ## Debian Package
 
 After installing Rust and Debian packaging tools:

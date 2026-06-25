@@ -106,7 +106,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
             if event.get_type() != xlib::KeyPress {
                 if event.get_type() == xlib::KeyRelease {
                     let xkey = event.key;
-                    logging::info(format!(
+                    logging::verbose(format!(
                         "x11 keyrelease keycode={} state=0x{:x}",
                         xkey.keycode, xkey.state
                     ));
@@ -114,7 +114,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 continue;
             }
             let xkey = event.key;
-            logging::info(format!(
+            logging::verbose(format!(
                 "x11 keypress keycode={} state=0x{:x}",
                 xkey.keycode, xkey.state
             ));
