@@ -21,6 +21,7 @@ pub fn draw_overlay(
     }
 
     draw_hud(cr, state);
+    draw_status_message(cr, state, width, height);
 
     for annotation in &state.annotations {
         draw_annotation(cr, annotation);
@@ -223,6 +224,33 @@ fn draw_hud(cr: &Context, state: &AppState) {
     let _ = cr.fill();
 
     cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
+    cr.move_to(x + padding, y + padding);
+    pangocairo::show_layout(cr, &layout);
+}
+
+fn draw_status_message(cr: &Context, state: &AppState, width: i32, height: i32) {
+    let Some(message) = &state.status_message else {
+        return;
+    };
+
+    let layout = pangocairo::create_layout(cr);
+    let desc = pango::FontDescription::from_string("Sans Bold 16");
+    layout.set_font_description(Some(&desc));
+    layout.set_width((width.saturating_sub(160) * pango::SCALE).max(1));
+    layout.set_wrap(pango::WrapMode::WordChar);
+    layout.set_text(message);
+    let (text_width, text_height) = layout.pixel_size();
+    let padding = 16.0;
+    let box_width = text_width as f64 + padding * 2.0;
+    let box_height = text_height as f64 + padding * 2.0;
+    let x = ((width as f64 - box_width) / 2.0).max(16.0);
+    let y = ((height as f64 - box_height) / 2.0).max(16.0);
+
+    cr.set_source_rgba(0.05, 0.05, 0.05, 0.88);
+    cr.rectangle(x, y, box_width, box_height);
+    let _ = cr.fill();
+
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.96);
     cr.move_to(x + padding, y + padding);
     pangocairo::show_layout(cr, &layout);
 }

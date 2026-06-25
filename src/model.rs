@@ -91,6 +91,7 @@ pub struct AppState {
     pub drag_start: Option<Point>,
     pub drag_current: Option<Point>,
     pub pending_text: String,
+    pub status_message: Option<String>,
 }
 
 impl Default for AppState {
@@ -107,6 +108,7 @@ impl Default for AppState {
             drag_start: None,
             drag_current: None,
             pending_text: String::new(),
+            status_message: None,
         }
     }
 }
@@ -123,5 +125,6 @@ impl AppState {
         self.mode = Mode::Idle;
         self.clear_interaction();
         self.annotations.clear();
+        self.status_message = None;
     }
 }

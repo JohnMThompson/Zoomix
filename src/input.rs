@@ -56,6 +56,7 @@ pub fn activate_mode(
     let previous_mode = state.mode;
     state.mode = mode;
     state.clear_interaction();
+    state.status_message = None;
 
     match mode {
         Mode::Zoom | Mode::LiveZoom if previous_mode == Mode::Idle => {
@@ -81,8 +82,17 @@ pub fn activate_mode(
     }
 }
 
+pub fn capture_failed(state: &mut AppState, mode: Mode, error: impl AsRef<str>) {
+    state.reset_overlay();
+    state.status_message = Some(format!(
+        "Could not capture the screen for {}: {}",
+        mode_label(mode),
+        error.as_ref()
+    ));
+}
+
 pub fn pointer_press(state: &mut AppState, point: Point) {
-    if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
+    if matches!(state.mode, Mode::Idle | Mode::Zoom | Mode::LiveZoom) {
         return;
     }
 
@@ -95,7 +105,8 @@ pub fn pointer_press(state: &mut AppState, point: Point) {
 }
 
 pub fn pointer_move(state: &mut AppState, point: Point) -> bool {
-    if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) || state.drag_start.is_none() {
+    if matches!(state.mode, Mode::Idle | Mode::Zoom | Mode::LiveZoom) || state.drag_start.is_none()
+    {
         return false;
     }
 
@@ -107,7 +118,7 @@ pub fn pointer_move(state: &mut AppState, point: Point) -> bool {
 }
 
 pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
-    if matches!(state.mode, Mode::Zoom | Mode::LiveZoom) {
+    if matches!(state.mode, Mode::Idle | Mode::Zoom | Mode::LiveZoom) {
         return PointerRelease::None;
     }
 
@@ -357,6 +368,17 @@ fn next_tool(tool: DrawTool) -> DrawTool {
     }
 }
 
+fn mode_label(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Idle => "idle",
+        Mode::Zoom => "zoom",
+        Mode::LiveZoom => "live zoom",
+        Mode::Draw => "draw",
+        Mode::Text => "text",
+        Mode::Snip => "snip",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +396,7 @@ mod tests {
             zoom_factor: 3.0,
             zoom_center: Point::new(20, 30),
             tool: DrawTool::Arrow,
+            status_message: Some("old status".to_string()),
             ..Default::default()
         };
 
@@ -383,6 +406,7 @@ mod tests {
         assert_eq!(state.zoom_factor, 1.0);
         assert_eq!(state.zoom_center, Point::new(0, 0));
         assert_eq!(state.tool, DrawTool::Pen);
+        assert_eq!(state.status_message, None);
         assert!(effect.capture_background);
     }
 
@@ -494,5 +518,30 @@ mod tests {
             Annotation::Text { at, ref text, color, .. }
                 if at == Point::new(12, 14) && text == "ab" && color == Color::BLUE
         ));
+    }
+
+    #[test]
+    fn capture_failure_resets_mode_and_preserves_user_visible_status() {
+        let mut state = AppState {
+            mode: Mode::Zoom,
+            annotations: vec![Annotation::Stroke {
+                points: vec![Point::new(1, 1), Point::new(2, 2)],
+                color: Color::RED,
+                width: 4.0,
+                highlight: false,
+            }],
+            ..Default::default()
+        };
+
+        capture_failed(&mut state, Mode::Zoom, "failed to capture root window");
+
+        assert_eq!(state.mode, Mode::Idle);
+        assert!(state.annotations.is_empty());
+        assert_eq!(
+            state.status_message,
+            Some(
+                "Could not capture the screen for zoom: failed to capture root window".to_string()
+            )
+        );
     }
 }

@@ -65,15 +65,7 @@ impl Overlay {
             logging::info(format!(
                 "overlay mode transition: {previous_mode:?} -> {mode:?}"
             ));
-            let effect = input::activate_mode(
-                &mut state,
-                mode,
-                pointer,
-                self.background.borrow().is_some(),
-            );
-            if effect.capture_background {
-                *self.background.borrow_mut() = capture::capture_root().ok();
-            }
+            activate_state_with_capture(&mut state, &self.background, mode, pointer);
         }
         present_overlay_window(&self.window, &self.area, "global activation");
         logging::info(format!("overlay presented for mode {mode:?}"));
@@ -247,19 +239,38 @@ impl OverlayHandles {
         let pointer = x11::pointer_position().unwrap_or_default();
         {
             let mut state = self.state.borrow_mut();
-            let effect = input::activate_mode(
-                &mut state,
-                mode,
-                pointer,
-                self.background.borrow().is_some(),
-            );
-            if effect.capture_background {
-                *self.background.borrow_mut() = capture::capture_root().ok();
-            }
+            activate_state_with_capture(&mut state, &self.background, mode, pointer);
         }
 
         present_overlay_window(&self.window, &self.area, "local activation");
         logging::info(format!("overlay locally presented for mode {mode:?}"));
+    }
+}
+
+fn activate_state_with_capture(
+    state: &mut AppState,
+    background: &Rc<RefCell<Option<Pixbuf>>>,
+    mode: Mode,
+    pointer: Point,
+) {
+    let effect = input::activate_mode(state, mode, pointer, background.borrow().is_some());
+    if !effect.capture_background {
+        return;
+    }
+
+    match capture::capture_root() {
+        Ok(pixbuf) => {
+            *background.borrow_mut() = Some(pixbuf);
+        }
+        Err(err) => {
+            *background.borrow_mut() = None;
+            let message = format!("{err:#}");
+            logging::error(format!(
+                "capture failed during {mode:?} activation: {message}"
+            ));
+            eprintln!("zoomix capture failed: {message}");
+            input::capture_failed(state, mode, message);
+        }
     }
 }
 
