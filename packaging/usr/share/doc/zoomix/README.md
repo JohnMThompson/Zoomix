@@ -6,7 +6,7 @@ The launcher starts the background hotkey listener without opening a terminal.
 Default hotkeys:
 
 - Ctrl+1: static zoom
-- Ctrl+4: live zoom placeholder
+- Ctrl+4: live zoom
 - Ctrl+2: draw
 - Ctrl+3: snip
 

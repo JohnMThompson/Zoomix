@@ -332,6 +332,14 @@ pub fn scroll_zoom(state: &mut AppState, direction: ZoomDirection) {
     state.zoom_factor = (state.zoom_factor + delta).clamp(1.0, 8.0);
 }
 
+pub fn update_live_zoom_center(state: &mut AppState, pointer: Point) -> bool {
+    if state.mode != Mode::LiveZoom {
+        return false;
+    }
+    state.zoom_center = pointer;
+    true
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoomDirection {
     In,
@@ -765,6 +773,22 @@ mod tests {
         pointer_release(&mut state, Point::new(40, 100));
 
         assert!(state.annotations.is_empty());
+    }
+
+    #[test]
+    fn live_zoom_center_updates_only_in_live_zoom() {
+        let mut state = AppState {
+            mode: Mode::LiveZoom,
+            zoom_center: Point::new(1, 1),
+            ..Default::default()
+        };
+
+        assert!(update_live_zoom_center(&mut state, Point::new(50, 60)));
+        assert_eq!(state.zoom_center, Point::new(50, 60));
+
+        state.mode = Mode::Zoom;
+        assert!(!update_live_zoom_center(&mut state, Point::new(70, 80)));
+        assert_eq!(state.zoom_center, Point::new(50, 60));
     }
 
     #[test]

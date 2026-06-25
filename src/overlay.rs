@@ -13,6 +13,8 @@ use glib::Propagation;
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
+const LIVE_ZOOM_REFRESH: Duration = Duration::from_millis(100);
+
 pub struct Overlay {
     window: gtk::ApplicationWindow,
     area: gtk::DrawingArea,
@@ -54,6 +56,7 @@ impl Overlay {
             clipboard: Rc::new(RefCell::new(None)),
         };
         overlay.connect_events();
+        overlay.connect_live_zoom_refresh();
         overlay
     }
 
@@ -152,6 +155,43 @@ impl Overlay {
             }
             area.queue_draw();
             Propagation::Stop
+        });
+    }
+
+    fn connect_live_zoom_refresh(&self) {
+        let state = self.state.clone();
+        let background = self.background.clone();
+        let window = self.window.clone();
+        let area = self.area.clone();
+
+        glib::timeout_add_local(LIVE_ZOOM_REFRESH, move || {
+            if state.borrow().mode != Mode::LiveZoom {
+                return glib::ControlFlow::Continue;
+            }
+
+            if let Ok(pointer) = x11::pointer_position() {
+                input::update_live_zoom_center(&mut state.borrow_mut(), pointer);
+            }
+
+            match capture_root_with_overlay_hidden(&window, &area) {
+                Ok(pixbuf) => {
+                    *background.borrow_mut() = Some(pixbuf);
+                    area.queue_draw();
+                }
+                Err(err) => {
+                    let message = format!("{err:#}");
+                    logging::error(format!("live zoom capture failed: {message}"));
+                    eprintln!("zoomix live zoom capture failed: {message}");
+                    {
+                        let mut state = state.borrow_mut();
+                        input::capture_failed(&mut state, Mode::LiveZoom, message);
+                    }
+                    *background.borrow_mut() = None;
+                    area.queue_draw();
+                }
+            }
+
+            glib::ControlFlow::Continue
         });
     }
 
@@ -277,7 +317,7 @@ impl ActivationSource {
     }
 
     fn hides_before_capture(self, mode: Mode) -> bool {
-        self == Self::Local && mode == Mode::Snip
+        self == Self::Local && matches!(mode, Mode::Snip | Mode::LiveZoom)
     }
 }
 
@@ -321,18 +361,51 @@ fn present_overlay_window(
     area.grab_focus();
     area.queue_draw();
 
-    if let Some(display) = gdk::Display::default() {
-        display.flush();
-    }
-    while gtk::events_pending() {
-        gtk::main_iteration_do(false);
-    }
+    flush_gtk_events();
 
     let area = area.clone();
     glib::idle_add_local_once(move || {
         logging::verbose(format!("overlay idle redraw after {activation_source}"));
         area.queue_draw();
     });
+}
+
+fn capture_root_with_overlay_hidden(
+    window: &gtk::ApplicationWindow,
+    area: &gtk::DrawingArea,
+) -> anyhow::Result<Pixbuf> {
+    let was_visible = window.is_visible();
+    if was_visible {
+        window.hide();
+        flush_gtk_events();
+    }
+
+    let result = capture::capture_root();
+
+    if was_visible {
+        restore_overlay_window(window, area);
+        flush_gtk_events();
+    }
+
+    result
+}
+
+fn restore_overlay_window(window: &gtk::ApplicationWindow, area: &gtk::DrawingArea) {
+    window.show_all();
+    window.fullscreen();
+    window.set_keep_above(true);
+    window.set_focus(Some(area));
+    window.present();
+    area.grab_focus();
+}
+
+fn flush_gtk_events() {
+    if let Some(display) = gdk::Display::default() {
+        display.flush();
+    }
+    while gtk::events_pending() {
+        gtk::main_iteration_do(false);
+    }
 }
 
 fn schedule_snip_capture(
