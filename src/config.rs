@@ -1,7 +1,10 @@
 use crate::model::Color;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -82,11 +85,15 @@ impl Default for Screenshots {
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::path()?;
+        Self::load_from_path(&path)
+    }
+
+    pub fn load_from_path(path: &Path) -> anyhow::Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
         let raw =
-            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut config: Self =
             toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
         config.expand_paths();
@@ -157,5 +164,33 @@ mod tests {
             .directory
             .to_string_lossy()
             .starts_with('~'));
+    }
+
+    #[test]
+    fn missing_config_path_uses_defaults() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_path(&temp.path().join("missing.toml")).expect("config");
+
+        assert_eq!(config.hotkeys.zoom, Config::default().hotkeys.zoom);
+    }
+
+    #[test]
+    fn malformed_config_path_returns_parse_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.toml");
+        fs::write(&path, "start_hidden = ").expect("write malformed config");
+
+        let err = Config::load_from_path(&path).expect_err("malformed config should fail");
+
+        assert!(err.to_string().contains("parsing"));
+    }
+
+    #[test]
+    fn directory_config_path_returns_read_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+
+        let err = Config::load_from_path(temp.path()).expect_err("directory should fail");
+
+        assert!(err.to_string().contains("reading"));
     }
 }

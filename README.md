@@ -81,6 +81,8 @@ Zoomix reads `~/.config/zoomix/config.toml`. If the file is absent, defaults are
 
 Hotkeys use `+`-separated modifier and key names, for example `Ctrl+1`, `Alt+Shift+Z`, or `Super+S`. Supported modifiers are `Ctrl`, `Alt`, `Shift`, and `Super`.
 
+If the config file exists but cannot be read or parsed, Zoomix reports the error and does not silently fall back to defaults.
+
 ## Logging
 
 Zoomix writes normal startup, mode transition, save, and error logs to `~/.cache/zoomix/zoomix.log`.

@@ -33,7 +33,11 @@ impl ZoomixApp {
         }
 
         x11::assert_x11_available()?;
-        let config = Config::load().unwrap_or_default();
+        let config = Config::load().map_err(|err| {
+            logging::error(format!("config load failed: {err:#}"));
+            eprintln!("zoomix config error: {err:#}");
+            err
+        })?;
         config.ensure_parent_dirs()?;
         if let Some(path) = logging::path() {
             logging::info(format!("log file path: {}", path.display()));
