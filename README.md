@@ -92,14 +92,46 @@ ZOOMIX_VERBOSE_LOG=1 cargo run
 
 ## Debian Package
 
-After installing Rust and Debian packaging tools:
+Build a local `.deb` package with Debian/Ubuntu packaging tools:
 
 ```bash
-sudo apt install debhelper-compat
+sudo apt install build-essential debhelper-compat cargo rustc pkg-config libgtk-3-dev libx11-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
 dpkg-buildpackage -us -uc
 ```
 
-The package installs the `zoomix` binary, desktop entry, icon, man page, and documentation.
+Install the package:
+
+```bash
+sudo apt install ../zoomix_0.1.0_amd64.deb
+```
+
+After installation, launch Zoomix from the Linux Mint application menu by searching for `Zoomix`. The launcher runs `zoomix` directly and does not open a terminal window. The package installs:
+
+- `/usr/bin/zoomix`
+- `/usr/share/applications/io.github.zoomix.desktop`
+- `/usr/share/icons/hicolor/scalable/apps/io.github.zoomix.svg`
+- `/usr/share/man/man1/zoomix.1`
+- `/etc/xdg/autostart/io.github.zoomix.desktop`
+
+Autostart is installed as an opt-in template and is disabled by default. Enable it for your user account:
+
+```bash
+mkdir -p ~/.config/autostart
+cp /etc/xdg/autostart/io.github.zoomix.desktop ~/.config/autostart/
+sed -i 's/X-GNOME-Autostart-enabled=false/X-GNOME-Autostart-enabled=true/' ~/.config/autostart/io.github.zoomix.desktop
+```
+
+Disable autostart:
+
+```bash
+rm -f ~/.config/autostart/io.github.zoomix.desktop
+```
+
+Uninstall Zoomix:
+
+```bash
+sudo apt remove zoomix
+```
 
 ## Acknowledgements
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "A Linux Mint X11 screen zoom, annotation, and image snip utility inspired by Sysinternals ZoomIt."
-repository = "https://github.com/john/zoomix"
+repository = "https://github.com/JohnMThompson/Zoomix"
 
 [dependencies]
 anyhow = "1.0"

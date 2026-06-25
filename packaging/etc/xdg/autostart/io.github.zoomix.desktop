@@ -6,5 +6,6 @@ Exec=zoomix
 Icon=io.github.zoomix
 Terminal=false
 Categories=Utility;
+Keywords=zoom;screen;annotation;draw;snip;screenshot;
 StartupNotify=false
 X-GNOME-Autostart-enabled=false
