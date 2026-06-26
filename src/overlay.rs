@@ -173,9 +173,8 @@ impl Overlay {
                 input::update_live_zoom_center(&mut state.borrow_mut(), pointer);
             }
 
-            match capture_root_with_overlay_hidden(&window, &area) {
-                Ok(pixbuf) => {
-                    *background.borrow_mut() = Some(pixbuf);
+            match refresh_live_zoom_background(&window, &area, &background) {
+                Ok(()) => {
                     area.queue_draw();
                 }
                 Err(err) => {
@@ -375,10 +374,11 @@ fn present_overlay_window(
     });
 }
 
-fn capture_root_with_overlay_hidden(
+fn refresh_live_zoom_background(
     window: &gtk::ApplicationWindow,
     area: &gtk::DrawingArea,
-) -> anyhow::Result<Pixbuf> {
+    background: &Rc<RefCell<Option<Pixbuf>>>,
+) -> anyhow::Result<()> {
     let was_visible = window.is_visible();
     if was_visible {
         window.hide();
@@ -387,12 +387,16 @@ fn capture_root_with_overlay_hidden(
 
     let result = capture::capture_root();
 
+    if let Ok(pixbuf) = result.as_ref() {
+        *background.borrow_mut() = Some(pixbuf.clone());
+    }
+
     if was_visible {
         restore_overlay_window(window, area);
         flush_gtk_events();
     }
 
-    result
+    result.map(|_| ())
 }
 
 fn restore_overlay_window(window: &gtk::ApplicationWindow, area: &gtk::DrawingArea) {
