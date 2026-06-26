@@ -81,6 +81,8 @@ Zoomix reads `~/.config/zoomix/config.toml`. If the file is absent, defaults are
 
 Hotkeys use `+`-separated modifier and key names, for example `Ctrl+1`, `Alt+Shift+Z`, or `Super+S`. Supported modifiers are `Ctrl`, `Alt`, `Shift`, and `Super`.
 
+On X11, Zoomix registers global hotkeys with passive root-window grabs. When those grabs succeed, Zoomix receives the key before the focused application, including Chrome tab shortcuts such as `Ctrl+1` and `Ctrl+2`. X11 does not allow Zoomix to override a shortcut already grabbed by another client, so Zoomix logs and prints a warning if a configured hotkey cannot be registered. If that happens, choose a different shortcut in `~/.config/zoomix/config.toml`, such as `Alt+Shift+Z` or `Super+Z`.
+
 If the config file exists but cannot be read or parsed, Zoomix reports the error and does not silently fall back to defaults.
 
 ## Logging

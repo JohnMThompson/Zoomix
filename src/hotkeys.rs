@@ -1,8 +1,21 @@
 use crate::{config::Hotkeys, logging, model::Mode};
 use anyhow::{anyhow, Context};
 use std::sync::mpsc::Sender;
-use std::{ffi::CString, ptr, thread};
+use std::{
+    ffi::CString,
+    os::raw::c_int,
+    ptr,
+    sync::{LazyLock, Mutex},
+    thread,
+};
 use x11::{keysym, xlib};
+
+static X_GRAB_ERRORS: LazyLock<Mutex<Vec<XGrabError>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct XGrabError {
+    error_code: u8,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HotkeySpec {
@@ -106,16 +119,26 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 continue;
             }
             let modifiers = spec.x11_modifiers();
+            let mut registered_any = false;
             for lock_mask in ignored_modifier_combinations() {
-                xlib::XGrabKey(
-                    display,
-                    keycode as i32,
-                    modifiers | lock_mask,
-                    root,
-                    xlib::False,
-                    xlib::GrabModeAsync,
-                    xlib::GrabModeAsync,
-                );
+                let effective_modifiers = modifiers | lock_mask;
+                if grab_key_checked(display, root, keycode as i32, effective_modifiers) {
+                    registered_any = true;
+                } else {
+                    let message = format!(
+                        "hotkey grab unavailable for {} with X11 modifiers 0x{effective_modifiers:x}; another client may already own this shortcut",
+                        spec.display
+                    );
+                    logging::error(&message);
+                    eprintln!("zoomix {message}");
+                }
+            }
+            if !registered_any {
+                logging::error(format!(
+                    "hotkey not registered: {} -> {:?} (keycode {keycode})",
+                    spec.display, spec.mode
+                ));
+                continue;
             }
             let message = format!(
                 "hotkey registered: {} -> {:?} (keycode {keycode})",
@@ -154,6 +177,51 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
             }
         }
     }
+}
+
+unsafe fn grab_key_checked(
+    display: *mut xlib::Display,
+    root: xlib::Window,
+    keycode: c_int,
+    modifiers: u32,
+) -> bool {
+    {
+        let mut errors = X_GRAB_ERRORS.lock().expect("x11 grab error mutex poisoned");
+        errors.clear();
+    }
+
+    let previous_handler = xlib::XSetErrorHandler(Some(record_x_grab_error));
+    xlib::XGrabKey(
+        display,
+        keycode,
+        modifiers,
+        root,
+        xlib::False,
+        xlib::GrabModeAsync,
+        xlib::GrabModeAsync,
+    );
+    xlib::XSync(display, xlib::False);
+    xlib::XSetErrorHandler(previous_handler);
+
+    let errors = X_GRAB_ERRORS.lock().expect("x11 grab error mutex poisoned");
+    !errors
+        .iter()
+        .any(|error| error.error_code == xlib::BadAccess)
+}
+
+unsafe extern "C" fn record_x_grab_error(
+    _display: *mut xlib::Display,
+    event: *mut xlib::XErrorEvent,
+) -> c_int {
+    if !event.is_null() {
+        let event = *event;
+        if let Ok(mut errors) = X_GRAB_ERRORS.lock() {
+            errors.push(XGrabError {
+                error_code: event.error_code,
+            });
+        }
+    }
+    0
 }
 
 fn parse_spec(mode: Mode, text: &str) -> anyhow::Result<HotkeySpec> {
