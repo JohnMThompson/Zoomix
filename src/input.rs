@@ -35,7 +35,7 @@ pub enum KeyAction {
 pub enum KeyOutcome {
     None,
     Redraw,
-    HideOverlay,
+    HideOverlay { clear_background: bool },
     CaptureSnip(Rect),
 }
 
@@ -253,7 +253,9 @@ pub fn apply_key_action(
     match action {
         KeyAction::Escape => {
             state.reset_overlay();
-            KeyOutcome::HideOverlay
+            KeyOutcome::HideOverlay {
+                clear_background: true,
+            }
         }
         KeyAction::Undo => {
             state.annotations.pop();
@@ -814,5 +816,21 @@ mod tests {
                 "Could not capture the screen for zoom: failed to capture root window".to_string()
             )
         );
+    }
+
+    #[test]
+    fn escape_requests_overlay_hide_and_background_clear() {
+        let mut state = AppState {
+            mode: Mode::Zoom,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            apply_key_action(&mut state, KeyAction::Escape, &text_style()),
+            KeyOutcome::HideOverlay {
+                clear_background: true
+            }
+        );
+        assert_eq!(state.mode, Mode::Idle);
     }
 }

@@ -249,7 +249,12 @@ impl OverlayHandles {
         match outcome {
             KeyOutcome::None => {}
             KeyOutcome::Redraw => self.area.queue_draw(),
-            KeyOutcome::HideOverlay => self.window.hide(),
+            KeyOutcome::HideOverlay { clear_background } => {
+                if clear_background {
+                    *self.background.borrow_mut() = None;
+                }
+                self.window.hide();
+            }
             KeyOutcome::CaptureSnip(rect) => {
                 self.window.hide();
                 while gtk::events_pending() {
