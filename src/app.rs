@@ -84,7 +84,7 @@ fn install_tray_window(
     box_.set_margin_start(12);
     box_.set_margin_end(12);
     let label = gtk::Label::new(Some(
-        "Zoomix is running. Use Ctrl+1 zoom, Ctrl+4 live zoom, Ctrl+2 draw, Ctrl+3 snip.",
+        "Zoomix is running. Use Alt+Shift+1 zoom, Alt+Shift+4 live zoom, Alt+Shift+2 draw, Alt+Shift+3 snip.",
     ));
     label.set_line_wrap(true);
     box_.pack_start(&label, true, true, 0);

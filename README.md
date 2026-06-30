@@ -16,10 +16,10 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 
 ## Default Hotkeys
 
-- `Ctrl+1`: static zoom, centered on the current cursor position; view-only until draw is activated
-- `Ctrl+4`: live zoom using Cinnamon's compositor-native magnifier; follows the cursor and remains view-only until draw is activated
-- `Ctrl+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
-- `Ctrl+3`: snip at 1:1
+- `Alt+Shift+1`: static zoom, centered on the current cursor position; view-only until draw is activated
+- `Alt+Shift+4`: live zoom using Cinnamon's compositor-native magnifier; follows the cursor and remains view-only until draw is activated
+- `Alt+Shift+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
+- `Alt+Shift+3`: snip at 1:1
 
 Overlay controls:
 
@@ -79,9 +79,9 @@ cargo run
 
 Zoomix reads `~/.config/zoomix/config.toml`. If the file is absent, defaults are used. See [examples/config.toml](examples/config.toml).
 
-Hotkeys use `+`-separated modifier and key names, for example `Ctrl+1`, `Alt+Shift+Z`, or `Super+S`. Supported modifiers are `Ctrl`, `Alt`, `Shift`, and `Super`.
+Hotkeys use `+`-separated modifier and key names, for example `Alt+Shift+1`, `Ctrl+Z`, or `Super+S`. Supported modifiers are `Ctrl`, `Alt`, `Shift`, and `Super`.
 
-On X11, Zoomix registers global hotkeys with passive root-window grabs. When those grabs succeed, Zoomix receives the key before the focused application, including Chrome tab shortcuts such as `Ctrl+1` and `Ctrl+2`. X11 does not allow Zoomix to override a shortcut already grabbed by another client, so Zoomix logs and prints a warning if a configured hotkey cannot be registered. If that happens, choose a different shortcut in `~/.config/zoomix/config.toml`, such as `Alt+Shift+Z` or `Super+Z`.
+On X11, Zoomix registers global hotkeys with core and XInput2 passive grabs. Some applications, including Chrome, can still process reserved accelerators such as `Ctrl+1` and `Ctrl+2`; Zoomix cannot guarantee priority for those combinations. The defaults therefore use `Alt+Shift+1` through `Alt+Shift+4`. If an existing `~/.config/zoomix/config.toml` still specifies `Ctrl+number`, update it to the new defaults or another non-conflicting combination.
 
 If the config file exists but cannot be read or parsed, Zoomix reports the error and does not silently fall back to defaults.
 

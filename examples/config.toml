@@ -1,10 +1,10 @@
 start_hidden = true
 
 [hotkeys]
-zoom = "Ctrl+1"
-live_zoom = "Ctrl+4"
-draw = "Ctrl+2"
-snip = "Ctrl+3"
+zoom = "Alt+Shift+1"
+live_zoom = "Alt+Shift+4"
+draw = "Alt+Shift+2"
+snip = "Alt+Shift+3"
 
 [drawing]
 stroke_width = 4.0

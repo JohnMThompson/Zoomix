@@ -462,7 +462,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_default_hotkeys_with_control_modifier() {
+    fn parses_default_hotkeys_with_alt_shift_modifiers() {
         let specs = specs(&Hotkeys::default()).expect("default hotkeys parse");
 
         assert_eq!(
@@ -471,10 +471,11 @@ mod tests {
                 mode: Mode::Zoom,
                 key: "1".to_string(),
                 modifiers: HotkeyModifiers {
-                    ctrl: true,
+                    alt: true,
+                    shift: true,
                     ..Default::default()
                 },
-                display: "Ctrl+1".to_string(),
+                display: "Alt+Shift+1".to_string(),
             }
         );
         assert_eq!(specs[1].mode, Mode::LiveZoom);
