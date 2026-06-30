@@ -22,7 +22,7 @@ pango = "0.18"
 pangocairo = "0.18"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
-x11 = { version = "2.21", features = ["xlib"] }
+x11 = { version = "2.21", features = ["xinput", "xlib"] }
 
 [dev-dependencies]
 tempfile = "3.10"

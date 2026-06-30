@@ -8,7 +8,7 @@ use std::{
     sync::{LazyLock, Mutex},
     thread,
 };
-use x11::{keysym, xlib};
+use x11::{keysym, xinput2, xlib};
 
 static X_GRAB_ERRORS: LazyLock<Mutex<Vec<XGrabError>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
@@ -111,6 +111,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
         logging::info("hotkey listener connected to X display");
         let root = xlib::XDefaultRootWindow(display);
 
+        let xi2_opcode = xinput2_opcode(display);
         let mut grabs = Vec::new();
         for spec in &specs {
             let keysym = spec.keysym()?;
@@ -119,20 +120,11 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 continue;
             }
             let modifiers = spec.x11_modifiers();
-            let mut registered_any = false;
-            for lock_mask in ignored_modifier_combinations() {
-                let effective_modifiers = modifiers | lock_mask;
-                if grab_key_checked(display, root, keycode as i32, effective_modifiers) {
-                    registered_any = true;
-                } else {
-                    let message = format!(
-                        "hotkey grab unavailable for {} with X11 modifiers 0x{effective_modifiers:x}; another client may already own this shortcut",
-                        spec.display
-                    );
-                    logging::error(&message);
-                    eprintln!("zoomix {message}");
-                }
-            }
+            let registered_any = if xi2_opcode.is_some() {
+                grab_xinput2_key(display, root, keycode as i32, modifiers, &spec.display)
+            } else {
+                grab_core_key(display, root, keycode as i32, modifiers, &spec.display)
+            };
             if !registered_any {
                 logging::error(format!(
                     "hotkey not registered: {} -> {:?} (keycode {keycode})",
@@ -153,6 +145,12 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
         loop {
             let mut event: xlib::XEvent = std::mem::zeroed();
             xlib::XNextEvent(display, &mut event);
+            if event.get_type() == xlib::GenericEvent {
+                if let Some(opcode) = xi2_opcode {
+                    handle_xinput2_event(display, &event, opcode, &grabs, &sender);
+                }
+                continue;
+            }
             if event.get_type() != xlib::KeyPress {
                 if event.get_type() == xlib::KeyRelease {
                     let xkey = event.key;
@@ -177,6 +175,143 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
             }
         }
     }
+}
+
+unsafe fn xinput2_opcode(display: *mut xlib::Display) -> Option<c_int> {
+    let extension = CString::new("XInputExtension").expect("static string contains no NUL");
+    let mut opcode = 0;
+    let mut event = 0;
+    let mut error = 0;
+    if xlib::XQueryExtension(
+        display,
+        extension.as_ptr(),
+        &mut opcode,
+        &mut event,
+        &mut error,
+    ) == xlib::False
+    {
+        logging::info("XInput2 unavailable; using core X11 hotkey grabs");
+        return None;
+    }
+
+    let mut major = 2;
+    let mut minor = 0;
+    if xinput2::XIQueryVersion(display, &mut major, &mut minor) != xlib::Success as c_int {
+        logging::info("XInput2 version negotiation failed; using core X11 hotkey grabs");
+        return None;
+    }
+    logging::info(format!("hotkey listener using XInput {major}.{minor}"));
+    Some(opcode)
+}
+
+unsafe fn grab_xinput2_key(
+    display: *mut xlib::Display,
+    root: xlib::Window,
+    keycode: c_int,
+    modifiers: u32,
+    display_name: &str,
+) -> bool {
+    let mut event_bits = [0_u8; 1];
+    xinput2::XISetMask(&mut event_bits, xinput2::XI_KeyPress);
+    xinput2::XISetMask(&mut event_bits, xinput2::XI_KeyRelease);
+    let mut event_mask = xinput2::XIEventMask {
+        deviceid: xinput2::XIAllMasterDevices,
+        mask_len: event_bits.len() as c_int,
+        mask: event_bits.as_mut_ptr(),
+    };
+    let mut grab_modifiers = ignored_modifier_combinations()
+        .into_iter()
+        .map(|lock_mask| xinput2::XIGrabModifiers {
+            modifiers: (modifiers | lock_mask) as c_int,
+            status: xinput2::XIGrabSuccess,
+        })
+        .collect::<Vec<_>>();
+
+    let status = xinput2::XIGrabKeycode(
+        display,
+        xinput2::XIAllMasterDevices,
+        keycode,
+        root,
+        xinput2::XIGrabModeAsync,
+        xinput2::XIGrabModeAsync,
+        xlib::False,
+        &mut event_mask,
+        grab_modifiers.len() as c_int,
+        grab_modifiers.as_mut_ptr(),
+    );
+    xlib::XSync(display, xlib::False);
+    if status != xlib::Success as c_int {
+        let message = format!("XInput2 hotkey grab failed for {display_name}: status {status}");
+        logging::error(&message);
+        eprintln!("zoomix {message}");
+        return false;
+    }
+
+    let successful = grab_modifiers
+        .iter()
+        .filter(|modifier| modifier.status == xinput2::XIGrabSuccess)
+        .count();
+    if successful != grab_modifiers.len() {
+        let message = format!(
+            "XInput2 hotkey grab unavailable for {display_name} in {} modifier states",
+            grab_modifiers.len() - successful
+        );
+        logging::error(&message);
+        eprintln!("zoomix {message}");
+    }
+    successful > 0
+}
+
+unsafe fn handle_xinput2_event(
+    display: *mut xlib::Display,
+    event: &xlib::XEvent,
+    opcode: c_int,
+    grabs: &[(u8, u32, Mode)],
+    sender: &Sender<Mode>,
+) {
+    let mut cookie = xlib::XGenericEventCookie::from(*event);
+    if cookie.extension != opcode || xlib::XGetEventData(display, &mut cookie) != xlib::True {
+        return;
+    }
+
+    if cookie.evtype == xinput2::XI_KeyPress {
+        let event_data = &*(cookie.data as *const xinput2::XIDeviceEvent);
+        let event_modifiers = event_data.mods.effective as u32 & !ignored_modifier_mask();
+        logging::verbose(format!(
+            "xinput2 keypress keycode={} state=0x{:x}",
+            event_data.detail, event_modifiers
+        ));
+        if let Some((_, _, mode)) = grabs.iter().find(|(keycode, modifiers, _)| {
+            *keycode == event_data.detail as u8 && *modifiers == event_modifiers
+        }) {
+            logging::info(format!("xinput2 hotkey matched -> {mode:?}"));
+            let _ = sender.send(*mode);
+        }
+    }
+    xlib::XFreeEventData(display, &mut cookie);
+}
+
+unsafe fn grab_core_key(
+    display: *mut xlib::Display,
+    root: xlib::Window,
+    keycode: c_int,
+    modifiers: u32,
+    display_name: &str,
+) -> bool {
+    let mut registered_any = false;
+    for lock_mask in ignored_modifier_combinations() {
+        let effective_modifiers = modifiers | lock_mask;
+        if grab_key_checked(display, root, keycode, effective_modifiers) {
+            registered_any = true;
+        } else {
+            let message = format!(
+                "hotkey grab unavailable for {display_name} with X11 modifiers 0x{effective_modifiers:x}; another client may already own this shortcut"
+            );
+            logging::error(&message);
+            eprintln!("zoomix {message}");
+        }
+    }
+    registered_any
 }
 
 unsafe fn grab_key_checked(
