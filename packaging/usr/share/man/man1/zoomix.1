@@ -7,16 +7,16 @@ zoomix \- screen zoom, annotation, and image snip utility for Linux Mint X11
 Zoomix provides ZoomIt-style zooming, on-screen drawing/text annotation, and image snip capture on Linux Mint Cinnamon X11 sessions.
 .SH DEFAULT HOTKEYS
 .TP
-.B Ctrl+1
+.B Ctrl+Shift+1
 Open zoom mode.
 .TP
-.B Ctrl+4
-Open live zoom mode.
+.B Ctrl+Shift+4
+Open live zoom mode using Cinnamon's compositor-native magnifier.
 .TP
-.B Ctrl+2
+.B Ctrl+Shift+2
 Open draw mode.
 .TP
-.B Ctrl+3
+.B Ctrl+Shift+3
 Open snip mode.
 .SH FILES
 .TP
@@ -26,4 +26,4 @@ User configuration file.
 .I ~/Pictures/Zoomix
 Default screenshot output directory.
 .SH LIMITATIONS
-This version targets X11. Wayland, video capture, timer, DemoType, and OCR behavior are not implemented.
+This version targets Linux Mint Cinnamon on X11. Chrome reserves Ctrl+number for tab selection, so Zoomix uses Ctrl+Shift+number by default. Wayland, video capture, timer, DemoType, and OCR behavior are not implemented.

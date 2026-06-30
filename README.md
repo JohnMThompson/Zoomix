@@ -24,7 +24,6 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 Overlay controls:
 
 - Mouse wheel, `+`, `-`: change zoom level
-- `p`: pen
 - `1`/`p`: pen
 - `2`/`r`: rectangle
 - `3`/`a`: arrow
@@ -57,7 +56,7 @@ rustup component add rustfmt clippy
 Linux Mint/Ubuntu dependencies:
 
 ```bash
-sudo apt install build-essential pkg-config libgtk-3-dev libx11-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libx11-dev libxi-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
 ```
 
 Build and test:
@@ -101,7 +100,7 @@ ZOOMIX_VERBOSE_LOG=1 cargo run
 Build a local `.deb` package with Debian/Ubuntu packaging tools:
 
 ```bash
-sudo apt install build-essential debhelper-compat cargo rustc pkg-config libgtk-3-dev libx11-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
+sudo apt install build-essential debhelper-compat cargo rustc pkg-config libgtk-3-dev libx11-dev libxi-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
 dpkg-buildpackage -us -uc
 ```
 

@@ -5,10 +5,16 @@ The launcher starts the background hotkey listener without opening a terminal.
 
 Default hotkeys:
 
-- Ctrl+1: static zoom
-- Ctrl+4: live zoom
-- Ctrl+2: draw
-- Ctrl+3: snip
+- Ctrl+Shift+1: static zoom
+- Ctrl+Shift+4: live zoom using Cinnamon's native magnifier
+- Ctrl+Shift+2: draw
+- Ctrl+Shift+3: snip
+
+Chrome reserves Ctrl+number for tab selection, so those combinations cannot be
+reliably overridden. Zoomix uses Ctrl+Shift+number by default.
+
+User configuration is read from ~/.config/zoomix/config.toml. See the upstream
+examples/config.toml for all available settings.
 
 Autostart is installed as an opt-in template at /etc/xdg/autostart/io.github.zoomix.desktop.
 To enable it for one user:
