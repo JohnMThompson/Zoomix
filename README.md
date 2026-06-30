@@ -17,7 +17,7 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 ## Default Hotkeys
 
 - `Ctrl+1`: static zoom, centered on the current cursor position; view-only until draw is activated
-- `Ctrl+4`: live zoom, centered on the current cursor position and refreshed while active; view-only until draw is activated
+- `Ctrl+4`: live zoom using Cinnamon's compositor-native magnifier; follows the cursor and remains view-only until draw is activated
 - `Ctrl+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
 - `Ctrl+3`: snip at 1:1
 

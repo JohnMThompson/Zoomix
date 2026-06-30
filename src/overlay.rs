@@ -13,7 +13,8 @@ use glib::Propagation;
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-const LIVE_ZOOM_REFRESH: Duration = Duration::from_millis(100);
+const MAGNIFIER_APPLICATION_SCHEMA: &str = "org.cinnamon.desktop.a11y.applications";
+const MAGNIFIER_SCHEMA: &str = "org.cinnamon.desktop.a11y.magnifier";
 
 pub struct Overlay {
     window: gtk::ApplicationWindow,
@@ -22,6 +23,7 @@ pub struct Overlay {
     config: Config,
     background: Rc<RefCell<Option<Pixbuf>>>,
     clipboard: Rc<RefCell<Option<arboard::Clipboard>>>,
+    magnifier: Rc<CinnamonMagnifier>,
 }
 
 impl Overlay {
@@ -37,6 +39,11 @@ impl Overlay {
         window.fullscreen();
         window.set_keep_above(true);
         window.set_accept_focus(true);
+        if let Some(screen) = gtk::prelude::WidgetExt::screen(&window) {
+            if let Some(visual) = screen.rgba_visual() {
+                window.set_visual(Some(&visual));
+            }
+        }
 
         let area = gtk::DrawingArea::new();
         area.set_can_focus(true);
@@ -54,9 +61,9 @@ impl Overlay {
             config,
             background: Rc::new(RefCell::new(None)),
             clipboard: Rc::new(RefCell::new(None)),
+            magnifier: Rc::new(CinnamonMagnifier::new()),
         };
         overlay.connect_events();
-        overlay.connect_live_zoom_refresh();
         overlay
     }
 
@@ -78,6 +85,12 @@ impl Overlay {
         let background = self.background.clone();
         self.area.connect_draw(move |area, cr| {
             let alloc = area.allocation();
+            if state.borrow().mode == Mode::LiveZoom {
+                cr.set_operator(cairo::Operator::Source);
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+                let _ = cr.paint();
+                return Propagation::Stop;
+            }
             logging::verbose(format!(
                 "overlay draw mode={:?} size={}x{} has_background={}",
                 state.borrow().mode,
@@ -146,6 +159,7 @@ impl Overlay {
 
         let state = self.state.clone();
         let area = self.area.clone();
+        let magnifier = self.magnifier.clone();
         self.area.connect_scroll_event(move |_, event| {
             let mut state = state.borrow_mut();
             match event.direction() {
@@ -153,44 +167,11 @@ impl Overlay {
                 gdk::ScrollDirection::Down => input::scroll_zoom(&mut state, ZoomDirection::Out),
                 _ => {}
             }
+            if state.mode == Mode::LiveZoom {
+                magnifier.set_factor(state.zoom_factor);
+            }
             area.queue_draw();
             Propagation::Stop
-        });
-    }
-
-    fn connect_live_zoom_refresh(&self) {
-        let state = self.state.clone();
-        let background = self.background.clone();
-        let window = self.window.clone();
-        let area = self.area.clone();
-
-        glib::timeout_add_local(LIVE_ZOOM_REFRESH, move || {
-            if state.borrow().mode != Mode::LiveZoom {
-                return glib::ControlFlow::Continue;
-            }
-
-            if let Ok(pointer) = x11::pointer_position() {
-                input::update_live_zoom_center(&mut state.borrow_mut(), pointer);
-            }
-
-            match refresh_live_zoom_background(&window, &area, &background) {
-                Ok(()) => {
-                    area.queue_draw();
-                }
-                Err(err) => {
-                    let message = format!("{err:#}");
-                    logging::error(format!("live zoom capture failed: {message}"));
-                    eprintln!("zoomix live zoom capture failed: {message}");
-                    {
-                        let mut state = state.borrow_mut();
-                        input::capture_failed(&mut state, Mode::LiveZoom, message);
-                    }
-                    *background.borrow_mut() = None;
-                    area.queue_draw();
-                }
-            }
-
-            glib::ControlFlow::Continue
         });
     }
 
@@ -202,6 +183,7 @@ impl Overlay {
             config: self.config.clone(),
             background: self.background.clone(),
             clipboard: self.clipboard.clone(),
+            magnifier: self.magnifier.clone(),
         }
     }
 }
@@ -214,6 +196,7 @@ struct OverlayHandles {
     config: Config,
     background: Rc<RefCell<Option<Pixbuf>>>,
     clipboard: Rc<RefCell<Option<arboard::Clipboard>>>,
+    magnifier: Rc<CinnamonMagnifier>,
 }
 
 impl OverlayHandles {
@@ -249,6 +232,7 @@ impl OverlayHandles {
             KeyOutcome::None => {}
             KeyOutcome::Redraw => self.area.queue_draw(),
             KeyOutcome::HideOverlay { clear_background } => {
+                self.magnifier.restore();
                 if clear_background {
                     *self.background.borrow_mut() = None;
                 }
@@ -288,7 +272,16 @@ impl OverlayHandles {
             logging::info(format!(
                 "overlay mode transition: {previous_mode:?} -> {mode:?}"
             ));
-            activate_state_with_capture(&mut state, &self.background, mode, pointer);
+            if previous_mode == Mode::LiveZoom && mode != Mode::LiveZoom {
+                self.magnifier.restore();
+            }
+            if mode == Mode::LiveZoom {
+                input::activate_mode(&mut state, mode, pointer, false);
+                *self.background.borrow_mut() = None;
+                self.magnifier.enable(state.zoom_factor);
+            } else {
+                activate_state_with_capture(&mut state, &self.background, mode, pointer);
+            }
         }
 
         present_overlay_window(&self.window, &self.area, source.activation_label());
@@ -321,7 +314,68 @@ impl ActivationSource {
     }
 
     fn hides_before_capture(self, mode: Mode) -> bool {
-        self == Self::Local && matches!(mode, Mode::Snip | Mode::LiveZoom)
+        self == Self::Local && mode == Mode::Snip
+    }
+}
+
+struct CinnamonMagnifier {
+    applications: gio::Settings,
+    magnifier: gio::Settings,
+    previous: RefCell<Option<(bool, f64)>>,
+}
+
+impl CinnamonMagnifier {
+    fn new() -> Self {
+        Self {
+            applications: gio::Settings::new(MAGNIFIER_APPLICATION_SCHEMA),
+            magnifier: gio::Settings::new(MAGNIFIER_SCHEMA),
+            previous: RefCell::new(None),
+        }
+    }
+
+    fn enable(&self, factor: f64) {
+        if self.previous.borrow().is_none() {
+            *self.previous.borrow_mut() = Some((
+                self.applications.boolean("screen-magnifier-enabled"),
+                self.magnifier.double("mag-factor"),
+            ));
+        }
+        self.set_factor(factor);
+        if let Err(err) = self
+            .applications
+            .set_boolean("screen-magnifier-enabled", true)
+        {
+            logging::error(format!("could not enable Cinnamon magnifier: {err}"));
+        }
+    }
+
+    fn set_factor(&self, factor: f64) {
+        if let Err(err) = self.magnifier.set_double("mag-factor", factor.max(1.0)) {
+            logging::error(format!("could not set Cinnamon magnifier factor: {err}"));
+        }
+    }
+
+    fn restore(&self) {
+        let Some((enabled, factor)) = self.previous.borrow_mut().take() else {
+            return;
+        };
+        if let Err(err) = self.magnifier.set_double("mag-factor", factor) {
+            logging::error(format!(
+                "could not restore Cinnamon magnifier factor: {err}"
+            ));
+        }
+        if let Err(err) = self
+            .applications
+            .set_boolean("screen-magnifier-enabled", enabled)
+        {
+            logging::error(format!("could not restore Cinnamon magnifier state: {err}"));
+        }
+    }
+}
+
+impl Drop for CinnamonMagnifier {
+    fn drop(&mut self) {
+        self.restore();
     }
 }
 
@@ -372,40 +426,6 @@ fn present_overlay_window(
         logging::verbose(format!("overlay idle redraw after {activation_source}"));
         area.queue_draw();
     });
-}
-
-fn refresh_live_zoom_background(
-    window: &gtk::ApplicationWindow,
-    area: &gtk::DrawingArea,
-    background: &Rc<RefCell<Option<Pixbuf>>>,
-) -> anyhow::Result<()> {
-    let was_visible = window.is_visible();
-    if was_visible {
-        window.hide();
-        flush_gtk_events();
-    }
-
-    let result = capture::capture_root();
-
-    if let Ok(pixbuf) = result.as_ref() {
-        *background.borrow_mut() = Some(pixbuf.clone());
-    }
-
-    if was_visible {
-        restore_overlay_window(window, area);
-        flush_gtk_events();
-    }
-
-    result.map(|_| ())
-}
-
-fn restore_overlay_window(window: &gtk::ApplicationWindow, area: &gtk::DrawingArea) {
-    window.show_all();
-    window.fullscreen();
-    window.set_keep_above(true);
-    window.set_focus(Some(area));
-    window.present();
-    area.grab_focus();
 }
 
 fn flush_gtk_events() {
