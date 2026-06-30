@@ -1,0 +1,66 @@
+name: Release Debian package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential \
+            cargo \
+            debhelper \
+            libgdk-pixbuf-2.0-dev \
+            libgtk-3-dev \
+            libpango1.0-dev \
+            libx11-dev \
+            libxi-dev \
+            pkg-config \
+            rustc
+
+      - name: Verify release version
+        if: github.event_name == 'push'
+        run: |
+          package_version="$(dpkg-parsechangelog --show-field Version)"
+          test "v${package_version}" = "${GITHUB_REF_NAME}"
+
+      - name: Build Debian package
+        run: dpkg-buildpackage --build=binary --unsigned-source --unsigned-changes
+
+      - name: Prepare release assets
+        run: |
+          cp "../zoomix_$(dpkg-parsechangelog --show-field Version)_amd64.deb" zoomix_amd64.deb
+          sha256sum zoomix_amd64.deb > zoomix_amd64.deb.sha256
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            zoomix_amd64.deb \
+            zoomix_amd64.deb.sha256 \
+            --generate-notes \
+            --title "Zoomix ${GITHUB_REF_NAME}"
+
+      - name: Upload manually built package
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zoomix-amd64
+          path: |
+            zoomix_amd64.deb
+            zoomix_amd64.deb.sha256

@@ -44,6 +44,22 @@ Overlay controls:
 - `Esc`: exit overlay
 - In snip mode, drag a region and release to save/copy the PNG.
 
+## Install
+
+The easiest installation method is to download `zoomix_amd64.deb` from the
+[latest release](https://github.com/JohnMThompson/Zoomix/releases/latest), open
+the downloaded file, and select **Install Package**.
+
+Alternatively, install the latest release from a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JohnMThompson/Zoomix/main/install.sh | bash
+```
+
+The installer supports 64-bit Debian-based systems, verifies the package
+checksum, installs required runtime dependencies, and adds Zoomix to the
+application menu. Start Zoomix from the menu after installation.
+
 ## Build Requirements
 
 Rust is not vendored in this repo. Install it before building:
@@ -95,16 +111,16 @@ Enable verbose logging for troubleshooting:
 ZOOMIX_VERBOSE_LOG=1 cargo run
 ```
 
-## Debian Package
+## Build Debian Package
 
 Build a local `.deb` package with Debian/Ubuntu packaging tools:
 
 ```bash
-sudo apt install build-essential debhelper-compat cargo rustc pkg-config libgtk-3-dev libx11-dev libxi-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
+sudo apt install build-essential debhelper cargo rustc pkg-config libgtk-3-dev libx11-dev libxi-dev libcairo2-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
 dpkg-buildpackage -us -uc
 ```
 
-Install the package:
+Install the locally built package:
 
 ```bash
 sudo apt install ../zoomix_0.1.0_amd64.deb
