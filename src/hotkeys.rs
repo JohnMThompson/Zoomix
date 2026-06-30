@@ -120,11 +120,11 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 continue;
             }
             let modifiers = spec.x11_modifiers();
-            let registered_any = if xi2_opcode.is_some() {
-                grab_xinput2_key(display, root, keycode as i32, modifiers, &spec.display)
-            } else {
-                grab_core_key(display, root, keycode as i32, modifiers, &spec.display)
-            };
+            let core_registered =
+                grab_core_key(display, root, keycode as i32, modifiers, &spec.display);
+            let xi2_registered = xi2_opcode.is_none()
+                || grab_xinput2_key(display, root, keycode as i32, modifiers, &spec.display);
+            let registered_any = core_registered && xi2_registered;
             if !registered_any {
                 logging::error(format!(
                     "hotkey not registered: {} -> {:?} (keycode {keycode})",
@@ -149,6 +149,12 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 if let Some(opcode) = xi2_opcode {
                     handle_xinput2_event(display, &event, opcode, &grabs, &sender);
                 }
+                continue;
+            }
+            // The core grab is also installed to suppress legacy events, but XI2 is
+            // the single activation source so one physical keypress cannot fire twice.
+            if xi2_opcode.is_some() && matches!(event.get_type(), xlib::KeyPress | xlib::KeyRelease)
+            {
                 continue;
             }
             if event.get_type() != xlib::KeyPress {
