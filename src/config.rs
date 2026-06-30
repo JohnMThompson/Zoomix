@@ -53,10 +53,10 @@ impl Default for Config {
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
-            zoom: "Alt+Shift+1".into(),
-            live_zoom: "Alt+Shift+4".into(),
-            draw: "Alt+Shift+2".into(),
-            snip: "Alt+Shift+3".into(),
+            zoom: "Ctrl+Shift+1".into(),
+            live_zoom: "Ctrl+Shift+4".into(),
+            draw: "Ctrl+Shift+2".into(),
+            snip: "Ctrl+Shift+3".into(),
         }
     }
 }
@@ -148,10 +148,10 @@ mod tests {
     #[test]
     fn default_hotkeys_match_v1_plan() {
         let config = Config::default();
-        assert_eq!(config.hotkeys.zoom, "Alt+Shift+1");
-        assert_eq!(config.hotkeys.live_zoom, "Alt+Shift+4");
-        assert_eq!(config.hotkeys.draw, "Alt+Shift+2");
-        assert_eq!(config.hotkeys.snip, "Alt+Shift+3");
+        assert_eq!(config.hotkeys.zoom, "Ctrl+Shift+1");
+        assert_eq!(config.hotkeys.live_zoom, "Ctrl+Shift+4");
+        assert_eq!(config.hotkeys.draw, "Ctrl+Shift+2");
+        assert_eq!(config.hotkeys.snip, "Ctrl+Shift+3");
     }
 
     #[test]
