@@ -1,3 +1,11 @@
+zoomix (0.2.0) unstable; urgency=medium
+
+  * Keep applications interactive during Live Zoom.
+  * Support zoomed, annotated snips and resume the prior view after capture.
+  * Show the selected drawing color in the overlay HUD.
+
+ -- Zoomix Maintainers <maintainers@example.com>  Wed, 01 Jul 2026 10:37:05 -0500
+
 zoomix (0.1.2) unstable; urgency=medium
 
   * Toggle active modes off when their hotkeys are pressed again.

@@ -6,7 +6,7 @@ Zoomix is a Linux Mint Cinnamon/X11 screen zoom, annotation, and image snip util
 
 ## Scope
 
-Version 0.1 targets X11 only and implements:
+Version 0.2 targets X11 only and implements:
 
 - Frozen screen zoom and live zoom.
 - On-screen drawing, shapes, highlights, arrows, text, undo, and clear.
@@ -136,7 +136,7 @@ dpkg-buildpackage -us -uc
 Install the locally built package:
 
 ```bash
-sudo apt install ../zoomix_0.1.0_amd64.deb
+sudo apt install ../zoomix_0.2.0_amd64.deb
 ```
 
 After installation, launch Zoomix from the Linux Mint application menu by searching for `Zoomix`. The launcher runs `zoomix` directly and does not open a terminal window. The package installs:
