@@ -53,6 +53,25 @@ pub fn draw_overlay(
     }
 }
 
+pub fn capture_overlay(
+    background: &Pixbuf,
+    state: &AppState,
+    width: i32,
+    height: i32,
+) -> anyhow::Result<Pixbuf> {
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let cr = Context::new(&surface)?;
+
+    draw_background(&cr, background, state, width, height);
+    for annotation in &state.annotations {
+        draw_annotation(&cr, annotation);
+    }
+
+    surface.flush();
+    gdk::pixbuf_get_from_surface(&surface, 0, 0, width, height)
+        .ok_or_else(|| anyhow::anyhow!("failed to render snip image"))
+}
+
 fn draw_background(cr: &Context, background: &Pixbuf, state: &AppState, width: i32, height: i32) {
     let zoom = match state.mode {
         Mode::Zoom | Mode::LiveZoom | Mode::Draw | Mode::Text => state.zoom_factor.max(1.0),

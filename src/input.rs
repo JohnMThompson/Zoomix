@@ -75,8 +75,7 @@ pub fn activate_mode(
     }
 
     ActivationEffect {
-        capture_background: matches!(mode, Mode::Zoom | Mode::LiveZoom | Mode::Snip)
-            || !has_background,
+        capture_background: matches!(mode, Mode::Zoom | Mode::LiveZoom) || !has_background,
     }
 }
 
@@ -594,6 +593,29 @@ mod tests {
         assert_eq!(state.mode, Mode::Draw);
         assert_eq!(state.zoom_factor, 2.0);
         assert_eq!(state.zoom_center, Point::new(100, 120));
+    }
+
+    #[test]
+    fn activate_snip_from_draw_reuses_background_and_annotations() {
+        let annotation = Annotation::Shape {
+            tool: DrawTool::Rectangle,
+            rect: Rect::new(10, 20, 30, 40),
+            start: Point::new(10, 20),
+            end: Point::new(40, 60),
+            color: Color::RED,
+            width: 4.0,
+        };
+        let mut state = AppState {
+            mode: Mode::Draw,
+            annotations: vec![annotation.clone()],
+            ..Default::default()
+        };
+
+        let effect = activate_mode(&mut state, Mode::Snip, Point::new(9, 9), true);
+
+        assert!(!effect.capture_background);
+        assert_eq!(state.mode, Mode::Snip);
+        assert_eq!(state.annotations, vec![annotation]);
     }
 
     #[test]

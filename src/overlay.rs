@@ -11,7 +11,7 @@ use crate::{
 use gdk_pixbuf::Pixbuf;
 use glib::Propagation;
 use gtk::prelude::*;
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc};
 
 const MAGNIFIER_APPLICATION_SCHEMA: &str = "org.cinnamon.desktop.a11y.applications";
 const MAGNIFIER_SCHEMA: &str = "org.cinnamon.desktop.a11y.magnifier";
@@ -131,20 +131,26 @@ impl Overlay {
         let area = self.area.clone();
         let window = self.window.clone();
         let config = self.config.clone();
+        let background = self.background.clone();
         let clipboard = self.clipboard.clone();
         self.area.connect_button_release_event(move |_, event| {
             let (x, y) = event.position();
             let mut state = state.borrow_mut();
+            let snip_source =
+                (state.mode == Mode::Snip).then(|| capture_snip_source(&background, &state, &area));
             match input::pointer_release(&mut state, Point::new(x as i32, y as i32)) {
                 PointerRelease::None => {}
                 PointerRelease::Redraw => area.queue_draw(),
                 PointerRelease::CaptureSnip(rect) => {
                     drop(state);
                     window.hide();
-                    while gtk::events_pending() {
-                        gtk::main_iteration_do(false);
-                    }
-                    schedule_snip_capture(config.clone(), clipboard.clone(), rect);
+                    flush_gtk_events();
+                    save_snip_result(
+                        &config,
+                        &clipboard,
+                        snip_source.unwrap_or_else(missing_snip_source),
+                        rect,
+                    );
                     area.queue_draw();
                 }
             }
@@ -224,11 +230,18 @@ impl OverlayHandles {
             size: self.config.drawing.font_size,
         };
         let outcome = {
+            let state = self.state.borrow();
+            let snip_source = (state.mode == Mode::Snip)
+                .then(|| capture_snip_source(&self.background, &state, &self.area));
+            drop(state);
             let mut state = self.state.borrow_mut();
-            input::apply_key_action(&mut state, action, &text_style)
+            (
+                input::apply_key_action(&mut state, action, &text_style),
+                snip_source,
+            )
         };
 
-        match outcome {
+        match outcome.0 {
             KeyOutcome::None => {}
             KeyOutcome::Redraw => self.area.queue_draw(),
             KeyOutcome::HideOverlay { clear_background } => {
@@ -240,10 +253,13 @@ impl OverlayHandles {
             }
             KeyOutcome::CaptureSnip(rect) => {
                 self.window.hide();
-                while gtk::events_pending() {
-                    gtk::main_iteration_do(false);
-                }
-                schedule_snip_capture(self.config.clone(), self.clipboard.clone(), rect);
+                flush_gtk_events();
+                save_snip_result(
+                    &self.config,
+                    &self.clipboard,
+                    outcome.1.unwrap_or_else(missing_snip_source),
+                    rect,
+                );
                 self.area.queue_draw();
             }
         }
@@ -258,7 +274,7 @@ impl OverlayHandles {
             "overlay {} activate requested: {mode:?}",
             source.label()
         ));
-        if source.hides_before_capture(mode) {
+        if source.hides_before_capture(mode) && self.background.borrow().is_none() {
             self.window.hide();
             while gtk::events_pending() {
                 gtk::main_iteration_do(false);
@@ -437,30 +453,44 @@ fn flush_gtk_events() {
     }
 }
 
-fn schedule_snip_capture(
-    config: Config,
-    clipboard_store: Rc<RefCell<Option<arboard::Clipboard>>>,
+fn capture_snip_source(
+    background: &Rc<RefCell<Option<Pixbuf>>>,
+    state: &AppState,
+    area: &gtk::DrawingArea,
+) -> anyhow::Result<Pixbuf> {
+    let background = background.borrow();
+    let background = background
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("snip background is unavailable"))?;
+    let allocation = area.allocation();
+    render::capture_overlay(background, state, allocation.width(), allocation.height())
+}
+
+fn save_snip_result(
+    config: &Config,
+    clipboard_store: &Rc<RefCell<Option<arboard::Clipboard>>>,
+    source: anyhow::Result<Pixbuf>,
     rect: Rect,
 ) {
-    logging::info(format!(
-        "scheduling snip capture after overlay hide: x={} y={} width={} height={}",
-        rect.x, rect.y, rect.width, rect.height
-    ));
-    glib::timeout_add_local_once(Duration::from_millis(120), move || {
-        if let Err(err) = save_snip_rect(&config, &clipboard_store, rect) {
-            logging::error(format!("snip failed: {err:#}"));
-            eprintln!("zoomix snip failed: {err:#}");
-        }
-    });
+    if let Err(err) =
+        source.and_then(|source| save_snip_rect(config, clipboard_store, &source, rect))
+    {
+        logging::error(format!("snip failed: {err:#}"));
+        eprintln!("zoomix snip failed: {err:#}");
+    }
+}
+
+fn missing_snip_source() -> anyhow::Result<Pixbuf> {
+    Err(anyhow::anyhow!("snip source was not prepared"))
 }
 
 fn save_snip_rect(
     config: &Config,
     clipboard_store: &Rc<RefCell<Option<arboard::Clipboard>>>,
+    source: &Pixbuf,
     rect: Rect,
 ) -> anyhow::Result<()> {
-    let root = capture::capture_root()?;
-    let pixbuf = capture::crop(&root, rect)?;
+    let pixbuf = capture::crop(source, rect)?;
     let path = capture::save_png(&pixbuf, &config.screenshots.directory)?;
     if config.screenshots.copy_to_clipboard {
         *clipboard_store.borrow_mut() = Some(capture::copy_to_clipboard(&pixbuf)?);
