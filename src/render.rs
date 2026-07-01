@@ -225,13 +225,16 @@ fn draw_pending_text(cr: &Context, state: &AppState) {
 }
 
 fn draw_hud(cr: &Context, state: &AppState) {
-    let label = match state.mode {
+    let (label, detail) = match state.mode {
         Mode::Idle => return,
-        Mode::Zoom => format!("Zoom {:.0}%", state.zoom_factor * 100.0),
-        Mode::LiveZoom => format!("Live Zoom {:.0}%", state.zoom_factor * 100.0),
-        Mode::Draw => format!("Draw: {}", tool_name(state.tool)),
-        Mode::Text => "Text".to_string(),
-        Mode::Snip => "Snip: drag to capture".to_string(),
+        Mode::Zoom => (format!("Zoom {:.0}%", state.zoom_factor * 100.0), None),
+        Mode::LiveZoom => (format!("Live Zoom {:.0}%", state.zoom_factor * 100.0), None),
+        Mode::Draw => (
+            format!("Draw: {}", tool_name(state.tool)),
+            Some(format!("Color: {}", color_name(state.color))),
+        ),
+        Mode::Text => ("Text".to_string(), None),
+        Mode::Snip => ("Snip: drag to capture".to_string(), None),
     };
 
     let layout = pangocairo::create_layout(cr);
@@ -239,22 +242,36 @@ fn draw_hud(cr: &Context, state: &AppState) {
     layout.set_font_description(Some(&desc));
     layout.set_text(&label);
     let (text_width, text_height) = layout.pixel_size();
+    let detail_layout = detail.map(|detail| {
+        let layout = pangocairo::create_layout(cr);
+        let desc = pango::FontDescription::from_string("Sans 10");
+        layout.set_font_description(Some(&desc));
+        layout.set_text(&detail);
+        layout
+    });
+    let (detail_width, detail_height) = detail_layout
+        .as_ref()
+        .map(pango::Layout::pixel_size)
+        .unwrap_or_default();
+    let line_spacing = if detail_layout.is_some() { 3.0 } else { 0.0 };
     let padding = 10.0;
     let x = 16.0;
     let y = 16.0;
+    let box_width = text_width.max(detail_width) as f64 + padding * 2.0;
+    let box_height = (text_height + detail_height) as f64 + line_spacing + padding * 2.0;
 
     cr.set_source_rgba(0.0, 0.0, 0.0, 0.72);
-    cr.rectangle(
-        x,
-        y,
-        text_width as f64 + padding * 2.0,
-        text_height as f64 + padding * 2.0,
-    );
+    cr.rectangle(x, y, box_width, box_height);
     let _ = cr.fill();
 
     cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
     cr.move_to(x + padding, y + padding);
     pangocairo::show_layout(cr, &layout);
+    if let Some(detail_layout) = detail_layout {
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.78);
+        cr.move_to(x + padding, y + padding + text_height as f64 + line_spacing);
+        pangocairo::show_layout(cr, &detail_layout);
+    }
 }
 
 fn draw_status_message(cr: &Context, state: &AppState, width: i32, height: i32) {
@@ -296,6 +313,24 @@ fn tool_name(tool: DrawTool) -> &'static str {
     }
 }
 
+fn color_name(color: Color) -> &'static str {
+    if color == Color::RED {
+        "Red"
+    } else if color == Color::GREEN {
+        "Green"
+    } else if color == Color::BLUE {
+        "Blue"
+    } else if color == Color::YELLOW {
+        "Yellow"
+    } else if color == Color::BLACK {
+        "Black"
+    } else if color == Color::WHITE {
+        "White"
+    } else {
+        "Custom"
+    }
+}
+
 fn draw_selection(cr: &Context, rect: Rect) {
     cr.set_source_rgba(0.1, 0.35, 1.0, 0.18);
     cr.rectangle(
@@ -312,4 +347,20 @@ fn draw_selection(cr: &Context, rect: Rect) {
 
 fn set_color(cr: &Context, color: Color) {
     cr.set_source_rgba(color.red, color.green, color.blue, color.alpha);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_drawing_palette_colors() {
+        assert_eq!(color_name(Color::RED), "Red");
+        assert_eq!(color_name(Color::GREEN), "Green");
+        assert_eq!(color_name(Color::BLUE), "Blue");
+        assert_eq!(color_name(Color::YELLOW), "Yellow");
+        assert_eq!(color_name(Color::BLACK), "Black");
+        assert_eq!(color_name(Color::WHITE), "White");
+        assert_eq!(color_name(Color::rgba(0.2, 0.3, 0.4, 1.0)), "Custom");
+    }
 }
