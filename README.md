@@ -1,8 +1,9 @@
+
 # Zoomix
 
 Zoomix is a Linux Mint Cinnamon/X11 screen zoom, annotation, and image snip utility inspired by Microsoft Sysinternals ZoomIt.
 
-<img width="990" height="540" alt="image" src="https://github.com/user-attachments/assets/182c102b-754f-4b3e-896d-29a70ce71cde" />
+<img width="575" height="386" alt="zoomix" src="https://github.com/user-attachments/assets/1a738744-f116-43ed-8c82-d77299198b4c" />
 
 ## Scope
 
