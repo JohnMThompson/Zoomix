@@ -11,7 +11,14 @@ use crate::{
 use gdk_pixbuf::Pixbuf;
 use glib::Propagation;
 use gtk::prelude::*;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 const MAGNIFIER_APPLICATION_SCHEMA: &str = "org.cinnamon.desktop.a11y.applications";
 const MAGNIFIER_SCHEMA: &str = "org.cinnamon.desktop.a11y.magnifier";
@@ -24,10 +31,11 @@ pub struct Overlay {
     background: Rc<RefCell<Option<Pixbuf>>>,
     clipboard: Rc<RefCell<Option<arboard::Clipboard>>>,
     magnifier: Rc<CinnamonMagnifier>,
+    live_zoom_active: Arc<AtomicBool>,
 }
 
 impl Overlay {
-    pub fn new(app: &gtk::Application, config: Config) -> Self {
+    pub fn new(app: &gtk::Application, config: Config, live_zoom_active: Arc<AtomicBool>) -> Self {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Zoomix Overlay")
@@ -62,6 +70,7 @@ impl Overlay {
             background: Rc::new(RefCell::new(None)),
             clipboard: Rc::new(RefCell::new(None)),
             magnifier: Rc::new(CinnamonMagnifier::new()),
+            live_zoom_active,
         };
         overlay.connect_events();
         overlay
@@ -70,6 +79,15 @@ impl Overlay {
     pub fn activate(&self, mode: Mode) {
         self.clone_handles()
             .activate_mode_from(mode, ActivationSource::Global);
+    }
+
+    pub fn adjust_live_zoom(&self, direction: ZoomDirection) {
+        let mut state = self.state.borrow_mut();
+        if state.mode != Mode::LiveZoom {
+            return;
+        }
+        input::scroll_zoom(&mut state, direction);
+        self.magnifier.set_factor(state.zoom_factor);
     }
 
     fn connect_events(&self) {
@@ -190,6 +208,7 @@ impl Overlay {
             background: self.background.clone(),
             clipboard: self.clipboard.clone(),
             magnifier: self.magnifier.clone(),
+            live_zoom_active: self.live_zoom_active.clone(),
         }
     }
 }
@@ -203,6 +222,7 @@ struct OverlayHandles {
     background: Rc<RefCell<Option<Pixbuf>>>,
     clipboard: Rc<RefCell<Option<arboard::Clipboard>>>,
     magnifier: Rc<CinnamonMagnifier>,
+    live_zoom_active: Arc<AtomicBool>,
 }
 
 impl OverlayHandles {
@@ -281,6 +301,7 @@ impl OverlayHandles {
                 source.label()
             ));
             self.magnifier.restore();
+            self.live_zoom_active.store(false, Ordering::Release);
             self.state.borrow_mut().reset_overlay();
             *self.background.borrow_mut() = None;
             self.window.hide();
@@ -304,14 +325,23 @@ impl OverlayHandles {
             ));
             if previous_mode == Mode::LiveZoom && mode != Mode::LiveZoom {
                 self.magnifier.restore();
+                self.live_zoom_active.store(false, Ordering::Release);
             }
             if mode == Mode::LiveZoom {
                 input::activate_mode(&mut state, mode, pointer, false);
                 *self.background.borrow_mut() = None;
                 self.magnifier.enable(state.zoom_factor);
+                self.live_zoom_active.store(true, Ordering::Release);
             } else {
                 activate_state_with_capture(&mut state, &self.background, mode, pointer);
             }
+        }
+
+        if mode == Mode::LiveZoom {
+            self.window.hide();
+            flush_gtk_events();
+            logging::info("live zoom active with application input pass-through");
+            return;
         }
 
         present_overlay_window(&self.window, &self.area, source.activation_label());

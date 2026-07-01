@@ -1,8 +1,8 @@
-use crate::{config::Config, hotkeys, logging, overlay::Overlay, x11};
+use crate::{config::Config, hotkeys, input::ZoomDirection, logging, overlay::Overlay, x11};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{atomic::AtomicBool, mpsc, Arc};
 use std::time::Duration;
 
 pub struct ZoomixApp;
@@ -43,15 +43,24 @@ impl ZoomixApp {
             logging::info(format!("log file path: {}", path.display()));
         }
 
-        let overlay = Rc::new(Overlay::new(app, config.clone()));
+        let live_zoom_active = Arc::new(AtomicBool::new(false));
+        let overlay = Rc::new(Overlay::new(app, config.clone(), live_zoom_active.clone()));
         let (sender, receiver) = mpsc::channel();
-        hotkeys::spawn_listener(config.hotkeys.clone(), sender);
+        hotkeys::spawn_listener(config.hotkeys.clone(), sender, live_zoom_active);
 
         let overlay_for_receiver = overlay.clone();
         glib::timeout_add_local(Duration::from_millis(25), move || {
-            for mode in receiver.try_iter() {
-                logging::info(format!("main loop received hotkey mode {mode:?}"));
-                overlay_for_receiver.activate(mode);
+            for action in receiver.try_iter() {
+                logging::info(format!("main loop received global action {action:?}"));
+                match action {
+                    hotkeys::GlobalAction::Activate(mode) => overlay_for_receiver.activate(mode),
+                    hotkeys::GlobalAction::LiveZoomIn => {
+                        overlay_for_receiver.adjust_live_zoom(ZoomDirection::In);
+                    }
+                    hotkeys::GlobalAction::LiveZoomOut => {
+                        overlay_for_receiver.adjust_live_zoom(ZoomDirection::Out);
+                    }
+                }
             }
             glib::ControlFlow::Continue
         });

@@ -6,8 +6,12 @@ use std::{
     ffi::CString,
     os::raw::c_int,
     ptr,
-    sync::{LazyLock, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, LazyLock, Mutex,
+    },
     thread,
+    time::Duration,
 };
 use x11::{keysym, xinput2, xlib};
 
@@ -16,6 +20,13 @@ static X_GRAB_ERRORS: LazyLock<Mutex<Vec<XGrabError>>> = LazyLock::new(|| Mutex:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct XGrabError {
     error_code: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalAction {
+    Activate(Mode),
+    LiveZoomIn,
+    LiveZoomOut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,17 +103,25 @@ pub fn mode_for_event(
     })
 }
 
-pub fn spawn_listener(config: Hotkeys, sender: Sender<Mode>) {
+pub fn spawn_listener(
+    config: Hotkeys,
+    sender: Sender<GlobalAction>,
+    live_zoom_active: Arc<AtomicBool>,
+) {
     thread::spawn(move || {
         logging::info("hotkey listener thread starting");
-        if let Err(err) = listen(config, sender) {
+        if let Err(err) = listen(config, sender, live_zoom_active) {
             logging::error(format!("hotkeys disabled: {err:#}"));
             eprintln!("zoomix hotkeys disabled: {err:#}");
         }
     });
 }
 
-fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
+fn listen(
+    config: Hotkeys,
+    sender: Sender<GlobalAction>,
+    live_zoom_active: Arc<AtomicBool>,
+) -> anyhow::Result<()> {
     let specs = specs(&config)?;
     unsafe {
         let display = xlib::XOpenDisplay(ptr::null());
@@ -144,7 +163,26 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
         xlib::XSync(display, xlib::False);
 
         let mut pressed_keys = HashSet::new();
+        let mut wheel_grabbed = false;
+        let mut wheel_uses_xinput2 = false;
         loop {
+            let live_zoom = live_zoom_active.load(Ordering::Acquire);
+            if live_zoom != wheel_grabbed {
+                if live_zoom {
+                    wheel_uses_xinput2 =
+                        set_live_zoom_wheel_grabs(display, root, xi2_opcode.is_some(), true);
+                } else {
+                    set_live_zoom_wheel_grabs(display, root, wheel_uses_xinput2, false);
+                    wheel_uses_xinput2 = false;
+                }
+                wheel_grabbed = live_zoom;
+            }
+
+            if xlib::XPending(display) == 0 {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+
             let mut event: xlib::XEvent = std::mem::zeroed();
             xlib::XNextEvent(display, &mut event);
             if event.get_type() == xlib::GenericEvent {
@@ -156,6 +194,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                         &grabs,
                         &sender,
                         &mut pressed_keys,
+                        wheel_grabbed && wheel_uses_xinput2,
                     );
                 }
                 continue;
@@ -164,6 +203,15 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
             // the single activation source so one physical keypress cannot fire twice.
             if xi2_opcode.is_some() && matches!(event.get_type(), xlib::KeyPress | xlib::KeyRelease)
             {
+                continue;
+            }
+            if wheel_uses_xinput2
+                && matches!(event.get_type(), xlib::ButtonPress | xlib::ButtonRelease)
+            {
+                continue;
+            }
+            if event.get_type() == xlib::ButtonPress && wheel_grabbed {
+                send_wheel_action(event.button.button, &sender);
                 continue;
             }
             if event.get_type() != xlib::KeyPress {
@@ -190,7 +238,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 *keycode == xkey.keycode as u8 && *modifiers == event_modifiers
             }) {
                 logging::info(format!("x11 hotkey matched -> {mode:?}"));
-                let _ = sender.send(*mode);
+                let _ = sender.send(GlobalAction::Activate(*mode));
             }
         }
     }
@@ -221,6 +269,112 @@ unsafe fn xinput2_opcode(display: *mut xlib::Display) -> Option<c_int> {
     }
     logging::info(format!("hotkey listener using XInput {major}.{minor}"));
     Some(opcode)
+}
+
+unsafe fn set_live_zoom_wheel_grabs(
+    display: *mut xlib::Display,
+    root: xlib::Window,
+    use_xinput2: bool,
+    enabled: bool,
+) -> bool {
+    let modifiers = xlib::ControlMask | xlib::ShiftMask;
+    let combinations = ignored_modifier_combinations()
+        .into_iter()
+        .map(|lock_mask| modifiers | lock_mask)
+        .collect::<Vec<_>>();
+
+    let mut xinput2_registered = use_xinput2;
+    for button in [xlib::Button4, xlib::Button5] {
+        for effective_modifiers in &combinations {
+            if enabled {
+                xlib::XGrabButton(
+                    display,
+                    button,
+                    *effective_modifiers,
+                    root,
+                    xlib::False,
+                    (xlib::ButtonPressMask | xlib::ButtonReleaseMask) as u32,
+                    xlib::GrabModeAsync,
+                    xlib::GrabModeAsync,
+                    0,
+                    0,
+                );
+            } else {
+                xlib::XUngrabButton(display, button, *effective_modifiers, root);
+            }
+        }
+
+        if use_xinput2 {
+            xinput2_registered &=
+                set_xinput2_wheel_grab(display, root, button as c_int, &combinations, enabled);
+        }
+    }
+    if enabled && use_xinput2 && !xinput2_registered {
+        for button in [xlib::Button4, xlib::Button5] {
+            set_xinput2_wheel_grab(display, root, button as c_int, &combinations, false);
+        }
+        logging::error("XInput2 live zoom wheel grabs unavailable; using core X11");
+    }
+    xlib::XSync(display, xlib::False);
+    logging::info(format!(
+        "live zoom wheel grabs {}",
+        if enabled { "enabled" } else { "disabled" }
+    ));
+    enabled && xinput2_registered
+}
+
+unsafe fn set_xinput2_wheel_grab(
+    display: *mut xlib::Display,
+    root: xlib::Window,
+    button: c_int,
+    combinations: &[u32],
+    enabled: bool,
+) -> bool {
+    let mut grab_modifiers = combinations
+        .iter()
+        .map(|modifiers| xinput2::XIGrabModifiers {
+            modifiers: *modifiers as c_int,
+            status: xinput2::XIGrabSuccess,
+        })
+        .collect::<Vec<_>>();
+
+    if enabled {
+        let mut event_bits = [0_u8; 1];
+        xinput2::XISetMask(&mut event_bits, xinput2::XI_ButtonPress);
+        xinput2::XISetMask(&mut event_bits, xinput2::XI_ButtonRelease);
+        let mut event_mask = xinput2::XIEventMask {
+            deviceid: xinput2::XIAllMasterDevices,
+            mask_len: event_bits.len() as c_int,
+            mask: event_bits.as_mut_ptr(),
+        };
+        let status = xinput2::XIGrabButton(
+            display,
+            xinput2::XIAllMasterDevices,
+            button,
+            root,
+            0,
+            xinput2::XIGrabModeAsync,
+            xinput2::XIGrabModeAsync,
+            xlib::False,
+            &mut event_mask,
+            grab_modifiers.len() as c_int,
+            grab_modifiers.as_mut_ptr(),
+        );
+        status == xlib::Success as c_int
+            && grab_modifiers
+                .iter()
+                .all(|modifier| modifier.status == xinput2::XIGrabSuccess)
+    } else {
+        xinput2::XIUngrabButton(
+            display,
+            xinput2::XIAllMasterDevices,
+            button,
+            root,
+            grab_modifiers.len() as c_int,
+            grab_modifiers.as_mut_ptr(),
+        );
+        true
+    }
 }
 
 unsafe fn grab_xinput2_key(
@@ -286,15 +440,19 @@ unsafe fn handle_xinput2_event(
     event: &xlib::XEvent,
     opcode: c_int,
     grabs: &[(u8, u32, Mode)],
-    sender: &Sender<Mode>,
+    sender: &Sender<GlobalAction>,
     pressed_keys: &mut HashSet<u8>,
+    wheel_grabbed: bool,
 ) {
     let mut cookie = xlib::XGenericEventCookie::from(*event);
     if cookie.extension != opcode || xlib::XGetEventData(display, &mut cookie) != xlib::True {
         return;
     }
 
-    if matches!(cookie.evtype, xinput2::XI_KeyPress | xinput2::XI_KeyRelease) {
+    if matches!(cookie.evtype, xinput2::XI_ButtonPress) && wheel_grabbed {
+        let event_data = &*(cookie.data as *const xinput2::XIDeviceEvent);
+        send_wheel_action(event_data.detail as u32, sender);
+    } else if matches!(cookie.evtype, xinput2::XI_KeyPress | xinput2::XI_KeyRelease) {
         let event_data = &*(cookie.data as *const xinput2::XIDeviceEvent);
         let keycode = event_data.detail as u8;
         if cookie.evtype == xinput2::XI_KeyRelease {
@@ -309,11 +467,25 @@ unsafe fn handle_xinput2_event(
                 *grabbed == keycode && *modifiers == event_modifiers
             }) {
                 logging::info(format!("xinput2 hotkey matched -> {mode:?}"));
-                let _ = sender.send(*mode);
+                let _ = sender.send(GlobalAction::Activate(*mode));
             }
         }
     }
     xlib::XFreeEventData(display, &mut cookie);
+}
+
+fn send_wheel_action(button: u32, sender: &Sender<GlobalAction>) {
+    if let Some(action) = wheel_action(button) {
+        let _ = sender.send(action);
+    }
+}
+
+fn wheel_action(button: u32) -> Option<GlobalAction> {
+    match button {
+        xlib::Button4 => Some(GlobalAction::LiveZoomIn),
+        xlib::Button5 => Some(GlobalAction::LiveZoomOut),
+        _ => None,
+    }
 }
 
 unsafe fn grab_core_key(
@@ -551,6 +723,13 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn maps_vertical_wheel_buttons_to_live_zoom_actions() {
+        assert_eq!(wheel_action(xlib::Button4), Some(GlobalAction::LiveZoomIn));
+        assert_eq!(wheel_action(xlib::Button5), Some(GlobalAction::LiveZoomOut));
+        assert_eq!(wheel_action(xlib::Button1), None);
     }
 
     #[test]

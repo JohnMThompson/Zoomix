@@ -6,12 +6,14 @@ The launcher starts the background hotkey listener without opening a terminal.
 Default hotkeys:
 
 - Ctrl+Shift+1: static zoom
-- Ctrl+Shift+4: live zoom using Cinnamon's native magnifier
+- Ctrl+Shift+4: interactive live zoom using Cinnamon's native magnifier
 - Ctrl+Shift+2: draw
 - Ctrl+Shift+3: snip
 
-Press the active mode's hotkey again to turn that mode off. Use the mouse wheel
-to adjust zoom magnification while Zoom or Live Zoom is active.
+Press the active mode's hotkey again to turn that mode off.
+
+Live Zoom leaves the desktop interactive. Click, type, and scroll normally in
+applications; use Ctrl+Shift+Wheel to change Live Zoom magnification.
 
 Chrome reserves Ctrl+number for tab selection, so those combinations cannot be
 reliably overridden. Zoomix uses Ctrl+Shift+number by default.

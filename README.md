@@ -17,17 +17,20 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 ## Default Hotkeys
 
 - `Ctrl+Shift+1`: static zoom, centered on the current cursor position; view-only until draw is activated
-- `Ctrl+Shift+4`: live zoom using Cinnamon's compositor-native magnifier; follows the cursor and remains view-only until draw is activated
+- `Ctrl+Shift+4`: interactive live zoom using Cinnamon's compositor-native magnifier; follows the cursor while applications remain usable
 - `Ctrl+Shift+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
 - `Ctrl+Shift+3`: snip at 1:1
 
 Press the active mode's hotkey again to turn that mode off. This also applies to
-Draw while its Text tool is active. Use the mouse wheel, `+`, or `-` to adjust
-zoom without re-triggering the hotkey.
+Draw while its Text tool is active.
+
+While Live Zoom is active, clicks, typing, and normal scrolling go to the
+application under the pointer. Hold `Ctrl+Shift` and use the mouse wheel to
+change Live Zoom magnification. Press `Ctrl+Shift+4` again to exit.
 
 Overlay controls:
 
-- Mouse wheel, `+`, `-`: change zoom level
+- Mouse wheel, `+`, `-`: change zoom level in overlay modes
 - `1`/`p`: pen
 - `2`/`r`: rectangle
 - `3`/`a`: arrow
