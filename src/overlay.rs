@@ -160,16 +160,15 @@ impl Overlay {
                 PointerRelease::None => {}
                 PointerRelease::Redraw => area.queue_draw(),
                 PointerRelease::CaptureSnip(rect) => {
+                    let resume_overlay = state.mode != Mode::Idle;
                     drop(state);
-                    window.hide();
-                    flush_gtk_events();
                     save_snip_result(
                         &config,
                         &clipboard,
                         snip_source.unwrap_or_else(missing_snip_source),
                         rect,
                     );
-                    area.queue_draw();
+                    finish_snip_ui(&window, &area, &background, resume_overlay);
                 }
             }
             Propagation::Stop
@@ -272,15 +271,14 @@ impl OverlayHandles {
                 self.window.hide();
             }
             KeyOutcome::CaptureSnip(rect) => {
-                self.window.hide();
-                flush_gtk_events();
+                let resume_overlay = self.state.borrow().mode != Mode::Idle;
                 save_snip_result(
                     &self.config,
                     &self.clipboard,
                     outcome.1.unwrap_or_else(missing_snip_source),
                     rect,
                 );
-                self.area.queue_draw();
+                finish_snip_ui(&self.window, &self.area, &self.background, resume_overlay);
             }
         }
     }
@@ -508,6 +506,21 @@ fn capture_snip_source(
         .ok_or_else(|| anyhow::anyhow!("snip background is unavailable"))?;
     let allocation = area.allocation();
     render::capture_overlay(background, state, allocation.width(), allocation.height())
+}
+
+fn finish_snip_ui(
+    window: &gtk::ApplicationWindow,
+    area: &gtk::DrawingArea,
+    background: &Rc<RefCell<Option<Pixbuf>>>,
+    resume_overlay: bool,
+) {
+    if resume_overlay {
+        area.queue_draw();
+    } else {
+        window.hide();
+        *background.borrow_mut() = None;
+        flush_gtk_events();
+    }
 }
 
 fn save_snip_result(

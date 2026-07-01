@@ -11,7 +11,8 @@ Default hotkeys:
 - Ctrl+Shift+3: snip
 
 Zoom, Draw, and Snip can be combined. Switching from a zoomed Draw view to Snip
-preserves the magnification and annotations in the saved image.
+preserves the magnification and annotations in the saved image, then returns to
+the zoomed Draw view after capture.
 
 Press the active mode's hotkey again to turn that mode off.
 

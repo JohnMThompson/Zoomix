@@ -23,8 +23,9 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 
 Modes can be combined. For example, activate static Zoom, switch to Draw to
 annotate the magnified view, then switch to Snip. Snip preserves the current
-zoom level, center, and annotations in the saved image. Starting Snip directly
-from idle remains 1:1.
+zoom level, center, and annotations in the saved image, then returns to the
+zoomed Draw view so additional captures can be taken. Starting Snip directly
+from idle remains 1:1 and closes after capture.
 
 Press the active mode's hotkey again to turn that mode off. This also applies to
 Draw while its Text tool is active.

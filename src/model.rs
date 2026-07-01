@@ -81,6 +81,7 @@ impl Color {
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub mode: Mode,
+    pub mode_before_snip: Mode,
     pub tool: DrawTool,
     pub color: Color,
     pub stroke_width: f64,
@@ -99,6 +100,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             mode: Mode::Idle,
+            mode_before_snip: Mode::Idle,
             tool: DrawTool::Pen,
             color: Color::RED,
             stroke_width: 4.0,
@@ -126,6 +128,7 @@ impl AppState {
 
     pub fn reset_overlay(&mut self) {
         self.mode = Mode::Idle;
+        self.mode_before_snip = Mode::Idle;
         self.clear_interaction();
         self.annotations.clear();
         self.status_message = None;

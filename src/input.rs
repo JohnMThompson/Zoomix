@@ -56,6 +56,13 @@ pub fn activate_mode(
     has_background: bool,
 ) -> ActivationEffect {
     let previous_mode = state.mode;
+    if mode == Mode::Snip {
+        state.mode_before_snip = match previous_mode {
+            Mode::Text => Mode::Draw,
+            Mode::LiveZoom => Mode::Zoom,
+            mode => mode,
+        };
+    }
     state.mode = mode;
     state.clear_interaction();
     state.status_message = None;
@@ -73,10 +80,6 @@ pub fn activate_mode(
         Mode::Snip if previous_mode == Mode::Idle => {
             state.zoom_factor = 1.0;
             state.zoom_center = Point::new(0, 0);
-            state.tool = DrawTool::Rectangle;
-        }
-        Mode::Snip => {
-            state.tool = DrawTool::Rectangle;
         }
         _ => {}
     }
@@ -148,7 +151,7 @@ pub fn pointer_release(state: &mut AppState, point: Point) -> PointerRelease {
             return PointerRelease::Redraw;
         }
 
-        state.reset_overlay();
+        complete_snip(state);
         return PointerRelease::CaptureSnip(rect);
     }
 
@@ -302,7 +305,7 @@ pub fn apply_key_action(
                 state.drag_current = None;
                 KeyOutcome::Redraw
             } else {
-                state.reset_overlay();
+                complete_snip(state);
                 KeyOutcome::CaptureSnip(rect)
             }
         }
@@ -322,6 +325,19 @@ pub fn apply_key_action(
             KeyOutcome::Redraw
         }
     }
+}
+
+fn complete_snip(state: &mut AppState) {
+    let resume_mode = state.mode_before_snip;
+    if resume_mode == Mode::Idle {
+        state.reset_overlay();
+        return;
+    }
+
+    state.mode = resume_mode;
+    state.mode_before_snip = Mode::Idle;
+    state.clear_interaction();
+    state.status_message = None;
 }
 
 pub fn set_tool(state: &mut AppState, tool: DrawTool) {
@@ -614,6 +630,8 @@ mod tests {
         };
         let mut state = AppState {
             mode: Mode::Draw,
+            tool: DrawTool::Arrow,
+            color: Color::GREEN,
             zoom_factor: 2.5,
             zoom_center: Point::new(320, 240),
             annotations: vec![annotation.clone()],
@@ -626,6 +644,8 @@ mod tests {
         assert_eq!(state.mode, Mode::Snip);
         assert_eq!(state.zoom_factor, 2.5);
         assert_eq!(state.zoom_center, Point::new(320, 240));
+        assert_eq!(state.tool, DrawTool::Arrow);
+        assert_eq!(state.color, Color::GREEN);
         assert_eq!(state.annotations, vec![annotation]);
     }
 
@@ -642,6 +662,38 @@ mod tests {
         assert!(effect.capture_background);
         assert_eq!(state.zoom_factor, 1.0);
         assert_eq!(state.zoom_center, Point::new(0, 0));
+    }
+
+    #[test]
+    fn completed_snip_returns_to_zoomed_draw_state() {
+        let annotation = Annotation::Shape {
+            tool: DrawTool::Arrow,
+            rect: Rect::new(10, 20, 30, 40),
+            start: Point::new(10, 20),
+            end: Point::new(40, 60),
+            color: Color::GREEN,
+            width: 4.0,
+        };
+        let mut state = AppState {
+            mode: Mode::Draw,
+            zoom_factor: 2.5,
+            zoom_center: Point::new(320, 240),
+            annotations: vec![annotation.clone()],
+            ..Default::default()
+        };
+        activate_mode(&mut state, Mode::Snip, Point::new(9, 9), true);
+
+        pointer_press(&mut state, Point::new(10, 10));
+        let outcome = pointer_release(&mut state, Point::new(100, 80));
+
+        assert_eq!(
+            outcome,
+            PointerRelease::CaptureSnip(Rect::new(10, 10, 90, 70))
+        );
+        assert_eq!(state.mode, Mode::Draw);
+        assert_eq!(state.zoom_factor, 2.5);
+        assert_eq!(state.zoom_center, Point::new(320, 240));
+        assert_eq!(state.annotations, vec![annotation]);
     }
 
     #[test]
