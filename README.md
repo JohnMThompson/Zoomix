@@ -19,7 +19,12 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 - `Ctrl+Shift+1`: static zoom, centered on the current cursor position; view-only until draw is activated
 - `Ctrl+Shift+4`: interactive live zoom using Cinnamon's compositor-native magnifier; follows the cursor while applications remain usable
 - `Ctrl+Shift+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
-- `Ctrl+Shift+3`: snip at 1:1
+- `Ctrl+Shift+3`: snip; starts at 1:1 from idle or preserves the active zoom/draw view
+
+Modes can be combined. For example, activate static Zoom, switch to Draw to
+annotate the magnified view, then switch to Snip. Snip preserves the current
+zoom level, center, and annotations in the saved image. Starting Snip directly
+from idle remains 1:1.
 
 Press the active mode's hotkey again to turn that mode off. This also applies to
 Draw while its Text tool is active.

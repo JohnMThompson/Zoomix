@@ -73,10 +73,7 @@ pub fn capture_overlay(
 }
 
 fn draw_background(cr: &Context, background: &Pixbuf, state: &AppState, width: i32, height: i32) {
-    let zoom = match state.mode {
-        Mode::Zoom | Mode::LiveZoom | Mode::Draw | Mode::Text => state.zoom_factor.max(1.0),
-        Mode::Snip | Mode::Idle => 1.0,
-    };
+    let zoom = background_zoom(state);
     let center = if zoom > 1.0 {
         state.zoom_center
     } else {
@@ -92,6 +89,15 @@ fn draw_background(cr: &Context, background: &Pixbuf, state: &AppState, width: i
     cr.set_source_pixbuf(background, 0.0, 0.0);
     let _ = cr.paint();
     let _ = cr.restore();
+}
+
+fn background_zoom(state: &AppState) -> f64 {
+    match state.mode {
+        Mode::Zoom | Mode::LiveZoom | Mode::Draw | Mode::Text | Mode::Snip => {
+            state.zoom_factor.max(1.0)
+        }
+        Mode::Idle => 1.0,
+    }
 }
 
 pub fn draw_annotation(cr: &Context, annotation: &Annotation) {
@@ -362,5 +368,16 @@ mod tests {
         assert_eq!(color_name(Color::BLACK), "Black");
         assert_eq!(color_name(Color::WHITE), "White");
         assert_eq!(color_name(Color::rgba(0.2, 0.3, 0.4, 1.0)), "Custom");
+    }
+
+    #[test]
+    fn snip_renders_with_retained_zoom_factor() {
+        let state = AppState {
+            mode: Mode::Snip,
+            zoom_factor: 2.5,
+            ..Default::default()
+        };
+
+        assert_eq!(background_zoom(&state), 2.5);
     }
 }

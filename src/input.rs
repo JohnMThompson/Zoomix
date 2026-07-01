@@ -70,9 +70,12 @@ pub fn activate_mode(
             state.zoom_center = Point::new(0, 0);
             state.tool = DrawTool::Pen;
         }
-        Mode::Snip => {
+        Mode::Snip if previous_mode == Mode::Idle => {
             state.zoom_factor = 1.0;
             state.zoom_center = Point::new(0, 0);
+            state.tool = DrawTool::Rectangle;
+        }
+        Mode::Snip => {
             state.tool = DrawTool::Rectangle;
         }
         _ => {}
@@ -611,6 +614,8 @@ mod tests {
         };
         let mut state = AppState {
             mode: Mode::Draw,
+            zoom_factor: 2.5,
+            zoom_center: Point::new(320, 240),
             annotations: vec![annotation.clone()],
             ..Default::default()
         };
@@ -619,7 +624,24 @@ mod tests {
 
         assert!(!effect.capture_background);
         assert_eq!(state.mode, Mode::Snip);
+        assert_eq!(state.zoom_factor, 2.5);
+        assert_eq!(state.zoom_center, Point::new(320, 240));
         assert_eq!(state.annotations, vec![annotation]);
+    }
+
+    #[test]
+    fn activate_snip_from_idle_uses_unzoomed_view() {
+        let mut state = AppState {
+            zoom_factor: 3.0,
+            zoom_center: Point::new(320, 240),
+            ..Default::default()
+        };
+
+        let effect = activate_mode(&mut state, Mode::Snip, Point::new(9, 9), false);
+
+        assert!(effect.capture_background);
+        assert_eq!(state.zoom_factor, 1.0);
+        assert_eq!(state.zoom_center, Point::new(0, 0));
     }
 
     #[test]
