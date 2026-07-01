@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    # Build against the oldest supported Ubuntu runtime so the generated
+    # shlib dependencies remain installable on Linux Mint and pre-t64 Ubuntu.
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -39,6 +41,16 @@ jobs:
 
       - name: Build Debian package
         run: dpkg-buildpackage --build=binary --unsigned-source --unsigned-changes
+
+      - name: Verify package compatibility
+        run: |
+          package="../zoomix_$(dpkg-parsechangelog --show-field Version)_amd64.deb"
+          dependencies="$(dpkg-deb --field "${package}" Depends)"
+          printf 'Package dependencies: %s\n' "${dependencies}"
+          if grep -Eq '(^|[ ,|])(libglib2\.0-0t64|libgtk-3-0t64)([ ,|]|$)' <<<"${dependencies}"; then
+            printf 'Error: package contains t64 dependencies incompatible with supported Linux Mint releases.\n' >&2
+            exit 1
+          fi
 
       - name: Prepare release assets
         run: |

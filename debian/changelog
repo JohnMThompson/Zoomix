@@ -1,3 +1,11 @@
+zoomix (0.2.1) unstable; urgency=medium
+
+  * Build release packages against a pre-t64 Ubuntu runtime for compatibility
+    with supported Linux Mint and Debian-based systems.
+  * Reject release artifacts that unexpectedly depend on t64 GTK libraries.
+
+ -- Zoomix Maintainers <maintainers@example.com>  Wed, 01 Jul 2026 14:02:04 -0500
+
 zoomix (0.2.0) unstable; urgency=medium
 
   * Keep applications interactive during Live Zoom.

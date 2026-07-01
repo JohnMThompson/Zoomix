@@ -136,7 +136,7 @@ dpkg-buildpackage -us -uc
 Install the locally built package:
 
 ```bash
-sudo apt install ../zoomix_0.2.0_amd64.deb
+sudo apt install ../zoomix_0.2.1_amd64.deb
 ```
 
 After installation, launch Zoomix from the Linux Mint application menu by searching for `Zoomix`. The launcher runs `zoomix` directly and does not open a terminal window. The package installs:
