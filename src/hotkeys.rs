@@ -2,6 +2,7 @@ use crate::{config::Hotkeys, logging, model::Mode};
 use anyhow::{anyhow, Context};
 use std::sync::mpsc::Sender;
 use std::{
+    collections::HashSet,
     ffi::CString,
     os::raw::c_int,
     ptr,
@@ -142,12 +143,20 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
         }
         xlib::XSync(display, xlib::False);
 
+        let mut pressed_keys = HashSet::new();
         loop {
             let mut event: xlib::XEvent = std::mem::zeroed();
             xlib::XNextEvent(display, &mut event);
             if event.get_type() == xlib::GenericEvent {
                 if let Some(opcode) = xi2_opcode {
-                    handle_xinput2_event(display, &event, opcode, &grabs, &sender);
+                    handle_xinput2_event(
+                        display,
+                        &event,
+                        opcode,
+                        &grabs,
+                        &sender,
+                        &mut pressed_keys,
+                    );
                 }
                 continue;
             }
@@ -160,6 +169,7 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
             if event.get_type() != xlib::KeyPress {
                 if event.get_type() == xlib::KeyRelease {
                     let xkey = event.key;
+                    pressed_keys.remove(&(xkey.keycode as u8));
                     logging::verbose(format!(
                         "x11 keyrelease keycode={} state=0x{:x}",
                         xkey.keycode, xkey.state
@@ -168,6 +178,9 @@ fn listen(config: Hotkeys, sender: Sender<Mode>) -> anyhow::Result<()> {
                 continue;
             }
             let xkey = event.key;
+            if !pressed_keys.insert(xkey.keycode as u8) {
+                continue;
+            }
             logging::verbose(format!(
                 "x11 keypress keycode={} state=0x{:x}",
                 xkey.keycode, xkey.state
@@ -274,24 +287,30 @@ unsafe fn handle_xinput2_event(
     opcode: c_int,
     grabs: &[(u8, u32, Mode)],
     sender: &Sender<Mode>,
+    pressed_keys: &mut HashSet<u8>,
 ) {
     let mut cookie = xlib::XGenericEventCookie::from(*event);
     if cookie.extension != opcode || xlib::XGetEventData(display, &mut cookie) != xlib::True {
         return;
     }
 
-    if cookie.evtype == xinput2::XI_KeyPress {
+    if matches!(cookie.evtype, xinput2::XI_KeyPress | xinput2::XI_KeyRelease) {
         let event_data = &*(cookie.data as *const xinput2::XIDeviceEvent);
-        let event_modifiers = event_data.mods.effective as u32 & !ignored_modifier_mask();
-        logging::verbose(format!(
-            "xinput2 keypress keycode={} state=0x{:x}",
-            event_data.detail, event_modifiers
-        ));
-        if let Some((_, _, mode)) = grabs.iter().find(|(keycode, modifiers, _)| {
-            *keycode == event_data.detail as u8 && *modifiers == event_modifiers
-        }) {
-            logging::info(format!("xinput2 hotkey matched -> {mode:?}"));
-            let _ = sender.send(*mode);
+        let keycode = event_data.detail as u8;
+        if cookie.evtype == xinput2::XI_KeyRelease {
+            pressed_keys.remove(&keycode);
+        } else if pressed_keys.insert(keycode) {
+            let event_modifiers = event_data.mods.effective as u32 & !ignored_modifier_mask();
+            logging::verbose(format!(
+                "xinput2 keypress keycode={} state=0x{:x}",
+                event_data.detail, event_modifiers
+            ));
+            if let Some((_, _, mode)) = grabs.iter().find(|(grabbed, modifiers, _)| {
+                *grabbed == keycode && *modifiers == event_modifiers
+            }) {
+                logging::info(format!("xinput2 hotkey matched -> {mode:?}"));
+                let _ = sender.send(*mode);
+            }
         }
     }
     xlib::XFreeEventData(display, &mut cookie);

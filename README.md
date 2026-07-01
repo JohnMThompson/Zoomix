@@ -21,6 +21,10 @@ Video capture, timer, DemoType, OCR, and Wayland support are intentionally out o
 - `Ctrl+Shift+2`: draw; from idle this is 1:1, from zoom/live zoom it keeps the active zoom level
 - `Ctrl+Shift+3`: snip at 1:1
 
+Press the active mode's hotkey again to turn that mode off. This also applies to
+Draw while its Text tool is active. Use the mouse wheel, `+`, or `-` to adjust
+zoom without re-triggering the hotkey.
+
 Overlay controls:
 
 - Mouse wheel, `+`, `-`: change zoom level

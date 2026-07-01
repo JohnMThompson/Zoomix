@@ -10,6 +10,9 @@ Default hotkeys:
 - Ctrl+Shift+2: draw
 - Ctrl+Shift+3: snip
 
+Press the active mode's hotkey again to turn that mode off. Use the mouse wheel
+to adjust zoom magnification while Zoom or Live Zoom is active.
+
 Chrome reserves Ctrl+number for tab selection, so those combinations cannot be
 reliably overridden. Zoomix uses Ctrl+Shift+number by default.
 

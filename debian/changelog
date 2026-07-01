@@ -1,3 +1,10 @@
+zoomix (0.1.2) unstable; urgency=medium
+
+  * Toggle active modes off when their hotkeys are pressed again.
+  * Ignore keyboard auto-repeat when handling global hotkeys.
+
+ -- Zoomix Maintainers <maintainers@example.com>  Wed, 01 Jul 2026 08:52:21 -0500
+
 zoomix (0.1.1) unstable; urgency=medium
 
   * Render snips off-screen to prevent compositor ghosting.

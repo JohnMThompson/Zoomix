@@ -274,6 +274,20 @@ impl OverlayHandles {
             "overlay {} activate requested: {mode:?}",
             source.label()
         ));
+        let current_mode = self.state.borrow().mode;
+        if input::mode_is_active(current_mode, mode) {
+            logging::info(format!(
+                "overlay {} toggle off requested: {current_mode:?}",
+                source.label()
+            ));
+            self.magnifier.restore();
+            self.state.borrow_mut().reset_overlay();
+            *self.background.borrow_mut() = None;
+            self.window.hide();
+            flush_gtk_events();
+            return;
+        }
+
         if source.hides_before_capture(mode) && self.background.borrow().is_none() {
             self.window.hide();
             while gtk::events_pending() {

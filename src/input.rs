@@ -45,6 +45,10 @@ pub struct TextStyle {
     pub size: f64,
 }
 
+pub fn mode_is_active(current: Mode, requested: Mode) -> bool {
+    current == requested || (requested == Mode::Draw && current == Mode::Text)
+}
+
 pub fn activate_mode(
     state: &mut AppState,
     mode: Mode,
@@ -616,6 +620,17 @@ mod tests {
         assert!(!effect.capture_background);
         assert_eq!(state.mode, Mode::Snip);
         assert_eq!(state.annotations, vec![annotation]);
+    }
+
+    #[test]
+    fn mode_hotkeys_toggle_the_active_mode_family() {
+        assert!(mode_is_active(Mode::Zoom, Mode::Zoom));
+        assert!(mode_is_active(Mode::LiveZoom, Mode::LiveZoom));
+        assert!(mode_is_active(Mode::Draw, Mode::Draw));
+        assert!(mode_is_active(Mode::Text, Mode::Draw));
+        assert!(mode_is_active(Mode::Snip, Mode::Snip));
+        assert!(!mode_is_active(Mode::Draw, Mode::Zoom));
+        assert!(!mode_is_active(Mode::Idle, Mode::Snip));
     }
 
     #[test]
